@@ -1,0 +1,8 @@
+; 公共子程序：@call / @return 演示
+
+#common_rooftop
+@wait 600
+yui「[speed=0]喂——[/speed]等等我啦！」voice=yui_0106
+yui「[shake]真的要爬这么多楼梯吗……[/shake]」voice=yui_0107
+@se bell
+@return

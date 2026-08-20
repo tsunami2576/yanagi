@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3d3a6e"/><stop offset="0.45" stop-color="#e8734f"/>
+      <stop offset="0.75" stop-color="#ffb35c"/><stop offset="1" stop-color="#ffd98e"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky2)"/>
+  <circle cx="800" cy="520" r="150" fill="#fff0c8" opacity="0.95"/>
+  <circle cx="800" cy="520" r="210" fill="#ffd98e" opacity="0.35"/>
+  <g fill="#2e2a45">
+    <rect x="0" y="640" width="1600" height="260"/>
+    <rect x="120" y="520" width="90" height="140"/>
+    <rect x="260" y="560" width="70" height="100"/>
+    <rect x="1380" y="500" width="100" height="160"/>
+    <rect x="1240" y="580" width="80" height="80"/>
+  </g>
+  <g stroke="#c95f3f" stroke-width="10" stroke-linecap="round" opacity="0.85">
+    <line x1="150" y1="640" x2="150" y2="470"/>
+    <path d="M60 500 Q150 430 240 500" fill="none"/>
+  </g>
+  <g fill="#ffffff" opacity="0.5">
+    <circle cx="300" cy="200" r="2.5"/><circle cx="520" cy="120" r="2"/><circle cx="1100" cy="180" r="2.5"/>
+    <circle cx="1320" cy="260" r="2"/><circle cx="900" cy="90" r="2"/>
+  </g>
+</svg>

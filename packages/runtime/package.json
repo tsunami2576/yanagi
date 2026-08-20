@@ -1,0 +1,14 @@
+{
+  "name": "@yanagi/runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@yanagi/audio-web": "workspace:*",
+    "@yanagi/core": "workspace:*",
+    "@yanagi/stage-pixi": "workspace:*",
+    "@yanagi/ui": "workspace:*"
+  }
+}

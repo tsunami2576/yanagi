@@ -1,0 +1,13 @@
+{
+  "id": "demo-semi",
+  "title": "蝉声与放课后",
+  "entry": "ch1_start",
+  "characters": [
+    { "id": "yui", "name": "结衣", "color": "#e58b9c", "voicePrefix": "yui" },
+    { "id": "nao", "name": "直", "color": "#7aa2c4", "voicePrefix": "nao" }
+  ],
+  "bgmLoop": {
+    "theme_main": [0, 8],
+    "theme_soft": [0, 8]
+  }
+}

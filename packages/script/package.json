@@ -1,0 +1,15 @@
+{
+  "name": "@yanagi/script",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./vite": "./src/vite-plugin.ts"
+  },
+  "dependencies": {
+    "@yanagi/core": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  }
+}

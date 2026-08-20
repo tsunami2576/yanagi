@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="hw" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cfd6de"/><stop offset="1" stop-color="#9aa4b0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#hw)"/>
+  <rect x="560" y="260" width="480" height="380" fill="#e8eef4" stroke="#6d7783" stroke-width="8"/>
+  <rect x="600" y="300" width="400" height="300" fill="#bfe0f0"/>
+  <rect x="770" y="300" width="60" height="300" fill="#8fb8d0"/>
+  <rect x="600" y="420" width="400" height="30" fill="#8fb8d0"/>
+  <g>
+    <rect x="0" y="120" width="560" height="560" fill="#7c8794" transform="skewY(12)"/>
+    <rect x="1040" y="640" width="560" height="560" fill="#7c8794" transform="skewY(-12)"/>
+  </g>
+  <g fill="#5d6873">
+    <rect x="120" y="300" width="120" height="200" rx="4"/>
+    <rect x="1360" y="300" width="120" height="200" rx="4"/>
+  </g>
+  <rect y="620" width="1600" height="280" fill="#8b939e"/>
+  <g stroke="#707a86" stroke-width="3" opacity="0.6">
+    <line x1="0" y1="700" x2="1600" y2="700"/><line x1="0" y1="790" x2="1600" y2="790"/><line x1="0" y1="870" x2="1600" y2="870"/>
+  </g>
+</svg>

@@ -1,0 +1,66 @@
+; ============================================================
+; 柳引擎 canary 剧本 · 第一章「蝉与放课后」
+; 覆盖目标：对话/旁白/行内标记/舞台/音频/选择肢/变量/条件/子程序/解锁
+; ============================================================
+
+#ch1_start
+@bg classroom_afternoon fade=800
+@bgm theme_main vol=0.8
+@title 第一章 · 蝉与放课后
+
+蝉声像温水一样，把整个教室泡得松松软软的。
+
+@show yui normal left
+yui「[ruby:放課後;ほうかご]的教室，果然还是太安静了呢。」voice=yui_0101
+yui「[em]你[/em]也会留下来吗？」voice=yui_0102
+
+@choice「怎么回答？」
+  「留下来陪你」 -> ch1_stay
+  「今天先回家」 -> ch1_home
+  「（装作没听见）」 -> ch1_silence once
+@end
+
+#ch1_stay
+@set affection = 1
+@emotion yui smile
+yui「……嘿嘿，那就稍微，[color=#e58b9c]只有稍微[/color]哦？」voice=yui_0103
+@goto ch1_merge
+
+#ch1_home
+@emotion yui lonely
+yui「是吗……[pause=500]那，明天见。」voice=yui_0104
+@goto ch1_merge
+
+#ch1_silence
+@emotion yui lonely
+yui「……唔，装听不见也太过分了吧！」voice=yui_0105
+
+#ch1_merge
+@hide yui slide=300
+@se door
+@show nao normal right focus
+nao「哟，还没走呢。」voice=nao_0101
+
+@if affection >= 1
+  nao「看来你们处得不错嘛。」voice=nao_0102
+@else
+  nao「怎么，气氛这么僵？」voice=nao_0103
+@end
+
+nao「走吧，去[b]天台[/b]看看——今天的[color=#e58b9c]夕阳[/color]会很漂亮。」voice=nao_0104
+@weather sakura density=0.5
+@call common_rooftop
+
+#ch1_finale
+@bg sunset fade=black:1200
+@bgm theme_soft fade=1500
+@flash color=white ms=300
+@unlock cg ev_sunset
+@unlock bgm theme_soft
+@shake power=4 ms=400
+
+天台的风把蝉声吹远了。[br]夏天的形状，第一次变得清晰起来。
+
+（……这个夏天，或许会和想象中的不太一样。）
+
+@end_game

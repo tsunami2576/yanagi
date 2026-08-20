@@ -1,0 +1,28 @@
+{
+  "name": "yanagi",
+  "private": true,
+  "version": "0.1.0",
+  "description": "柳（Yanagi）视觉小说引擎 —— Web 优先、桌面双端的 TypeScript VN 引擎",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "playwright test",
+    "gen:assets": "node games/demo/tools/gen-assets.mjs",
+    "dev": "pnpm -C games/demo dev",
+    "build": "pnpm -C games/demo build",
+    "preview": "pnpm -C games/demo preview"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.2.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

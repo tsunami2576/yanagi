@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900">
+  <defs>
+    <linearGradient id="hairG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f4c5c"/><stop offset="1" stop-color="#2b3440"/>
+    </linearGradient>
+    <linearGradient id="uni" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5d6b7d"/><stop offset="1" stop-color="#3d4855"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <path d="M300 470 C160 470 90 560 70 900 L530 900 C510 560 440 470 300 470 Z" fill="url(#uni)"/>
+    <path d="M300 470 L215 900 L385 900 Z" fill="#f6f2ec" opacity="0.92"/>
+    <path d="M170 560 L140 900 L90 900 C100 700 130 590 170 560 Z" fill="#2b3440"/>
+    <path d="M430 560 L460 900 L510 900 C500 700 470 590 430 560 Z" fill="#2b3440"/>
+    <path d="M300 470 C160 470 90 560 70 900 L530 900 C510 560 440 470 300 470 Z" fill="none" stroke="#3d4855" stroke-width="4" opacity="0.5"/>
+    <ellipse cx="300" cy="300" rx="150" ry="165" fill="#ffe4cf"/>
+    <path d="M150 290 C150 150 210 110 300 110 C390 110 450 150 450 290 C450 240 420 200 400 195 C370 230 230 230 200 195 C180 200 150 240 150 290 Z" fill="url(#hairG)"/>
+    <path d="M150 285 C140 420 120 520 90 600 C110 470 130 380 150 285 Z" fill="url(#hairG)"/>
+    <path d="M450 285 C460 420 480 520 510 600 C490 470 470 380 450 285 Z" fill="url(#hairG)"/>
+    <ellipse cx="300" cy="205" rx="90" ry="40" fill="#3f4c5c" opacity="0.9"/>
+    <g><circle cx="255" cy="300" r="14" fill="#3a3f52"/><circle cx="345" cy="300" r="14" fill="#3a3f52"/>
+             <circle cx="260" cy="295" r="4" fill="#fff"/><circle cx="350" cy="295" r="4" fill="#fff"/></g>
+    <path d="M262 262 Q255 252 248 260" stroke="#5a4a3a" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M338 262 Q345 252 352 260" stroke="#5a4a3a" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M288 358 Q300 366 312 358" stroke="#b06a6a" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <ellipse cx="300" cy="128" rx="12" ry="8" fill="#3f4c5c" opacity="0.95"/>
+  </g>
+</svg>

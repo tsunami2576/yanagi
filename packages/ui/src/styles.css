@@ -1,0 +1,454 @@
+/* 柳 Yanagi · 默认主题「藍」：日式现代 × 玻璃拟态 */
+.yg-root {
+  --yg-aoi: #7aa2c4;
+  --yg-aoi-deep: #4a6fa5;
+  --yg-sakura: #e58b9c;
+  --yg-text: #eef2f8;
+  --yg-text-dim: #aab6c8;
+  --yg-panel: rgba(15, 19, 28, 0.86);
+  --yg-panel-light: rgba(255, 255, 255, 0.06);
+  --yg-line: rgba(255, 255, 255, 0.1);
+  --yg-win-bg-alpha: 0.86;
+  --yg-font: 'Noto Sans SC', 'Noto Sans JP', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', system-ui, sans-serif;
+  --yg-font-serif: 'Noto Serif SC', 'Noto Serif JP', 'Songti SC', serif;
+
+  position: fixed;
+  inset: 0;
+  background: #0b0e14;
+  color: var(--yg-text);
+  font-family: var(--yg-font);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  line-break: strict;
+  overflow-wrap: anywhere;
+}
+
+.yg-stage {
+  position: absolute;
+  inset: 0;
+}
+.yg-stage canvas {
+  display: block;
+}
+
+/* ---------- 文本窗 ---------- */
+.yg-textwin {
+  position: absolute;
+  left: 50%;
+  bottom: 4.5vh;
+  transform: translateX(-50%);
+  width: min(92vw, 1080px);
+  min-height: 20vh;
+  padding: 24px 30px 34px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  border: 1px solid var(--yg-line);
+  background: linear-gradient(
+    rgba(13, 17, 26, var(--yg-win-bg-alpha)),
+    rgba(9, 12, 19, calc(var(--yg-win-bg-alpha) + 0.06))
+  );
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.24s ease;
+  pointer-events: none;
+}
+.yg-textwin.on {
+  opacity: 1;
+}
+
+.yg-name {
+  position: absolute;
+  top: -16px;
+  left: 22px;
+  padding: 3px 20px;
+  border-radius: 9px 9px 9px 2px;
+  background: linear-gradient(135deg, rgba(26, 32, 46, 0.95), rgba(18, 23, 34, 0.95));
+  border: 1px solid var(--yg-line);
+  border-left: 4px solid var(--yg-name-color, var(--yg-sakura));
+  color: var(--yg-name-color, var(--yg-sakura));
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+
+.yg-text {
+  font-size: clamp(17px, 2.3vh, 22px);
+  line-height: 1.95;
+  letter-spacing: 0.02em;
+}
+.yg-text ruby rt {
+  font-size: 0.52em;
+  color: var(--yg-text-dim);
+  letter-spacing: 0.05em;
+}
+.yg-u {
+  visibility: hidden;
+}
+.yg-u.on {
+  visibility: visible;
+}
+.yg-em {
+  text-emphasis: filled dot var(--yg-sakura);
+  -webkit-text-emphasis: filled dot var(--yg-sakura);
+}
+.yg-shake {
+  display: inline-block;
+  animation: yg-shake 0.12s infinite;
+}
+
+.yg-ind {
+  position: absolute;
+  right: 22px;
+  bottom: 12px;
+  font-size: 12px;
+  color: var(--yg-aoi);
+  opacity: 0;
+}
+.yg-ind.on {
+  animation: yg-breathe 1.4s ease-in-out infinite;
+}
+
+@keyframes yg-breathe {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(3px); }
+}
+@keyframes yg-shake {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-1.5px, 1px); }
+  75% { transform: translate(1.5px, -1px); }
+}
+
+/* ---------- 选择肢 ---------- */
+.yg-choices {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 30;
+}
+.yg-choices.on {
+  display: flex;
+}
+.yg-choice-prompt {
+  font-size: 17px;
+  color: var(--yg-text-dim);
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+.yg-choice-btn {
+  min-width: min(420px, 80vw);
+  padding: 14px 34px;
+  text-align: center;
+  font-size: 17px;
+  font-family: var(--yg-font);
+  letter-spacing: 0.08em;
+  color: var(--yg-text);
+  background: var(--yg-panel);
+  border: 1px solid var(--yg-line);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+.yg-choice-btn:hover,
+.yg-choice-btn.sel {
+  border-color: var(--yg-sakura);
+  background: rgba(30, 24, 32, 0.9);
+  transform: translateY(-2px);
+}
+.yg-choice-btn.dis {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* ---------- 通用面板 / 按钮 ---------- */
+.yg-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 8, 12, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+.yg-overlay.on {
+  display: flex;
+}
+.yg-panel {
+  width: min(560px, 92vw);
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: 26px 30px;
+  border-radius: 16px;
+  background: var(--yg-panel);
+  border: 1px solid var(--yg-line);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+.yg-panel h2 {
+  margin: 0 0 18px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: var(--yg-aoi);
+}
+.yg-btn {
+  display: block;
+  width: 100%;
+  padding: 12px 18px;
+  margin: 8px 0;
+  font-size: 15px;
+  font-family: var(--yg-font);
+  letter-spacing: 0.15em;
+  color: var(--yg-text);
+  background: var(--yg-panel-light);
+  border: 1px solid var(--yg-line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.yg-btn:hover:not(:disabled) {
+  border-color: var(--yg-aoi);
+  background: rgba(122, 162, 196, 0.12);
+}
+.yg-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.yg-panel-foot {
+  margin-top: 18px;
+  text-align: center;
+  color: var(--yg-text-dim);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+
+/* ---------- 标题画面 ---------- */
+.yg-title {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background:
+    radial-gradient(120% 90% at 70% 20%, rgba(74, 111, 165, 0.28), transparent 60%),
+    radial-gradient(100% 80% at 20% 90%, rgba(229, 139, 156, 0.16), transparent 55%),
+    linear-gradient(160deg, #10141d 0%, #0b0e14 55%, #0e1119 100%);
+  z-index: 50;
+}
+.yg-title.on {
+  display: flex;
+}
+.yg-title-main {
+  font-family: var(--yg-font-serif);
+  font-size: clamp(30px, 6.4vw, 58px);
+  font-weight: 400;
+  letter-spacing: 0.42em;
+  margin-left: 0.42em; /* 抵消末字间距，保持视觉居中 */
+  color: var(--yg-text);
+  text-shadow: 0 4px 30px rgba(122, 162, 196, 0.35);
+}
+.yg-title-sub {
+  font-size: 13px;
+  letter-spacing: 0.5em;
+  margin-left: 0.5em;
+  color: var(--yg-text-dim);
+  margin-bottom: 44px;
+}
+.yg-title-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(300px, 80vw);
+}
+.yg-title-menu .yg-btn {
+  background: transparent;
+}
+.yg-title .yg-panel-foot {
+  position: absolute;
+  bottom: 18px;
+}
+
+/* ---------- 设置 ---------- */
+.yg-set-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 52px;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 0;
+  font-size: 14px;
+}
+.yg-set-row label {
+  color: var(--yg-text-dim);
+  letter-spacing: 0.08em;
+}
+.yg-set-row output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--yg-text);
+}
+.yg-set-row input[type='range'] {
+  width: 100%;
+  accent-color: var(--yg-aoi);
+}
+
+/* ---------- 存档 ---------- */
+.yg-save-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px;
+}
+.yg-save-slot {
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--yg-line);
+  background: var(--yg-panel-light);
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+  color: var(--yg-text);
+  font-family: var(--yg-font);
+  transition: border-color 0.15s ease;
+}
+.yg-save-slot:hover {
+  border-color: var(--yg-aoi);
+}
+.yg-save-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: rgba(255, 255, 255, 0.04);
+}
+.yg-save-meta {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--yg-text-dim);
+  line-height: 1.5;
+}
+.yg-save-meta b {
+  color: var(--yg-text);
+  font-weight: 600;
+  font-size: 13px;
+  display: block;
+}
+
+/* ---------- 想起（Backlog） ---------- */
+.yg-backlog {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(480px, 94vw);
+  display: none;
+  flex-direction: column;
+  background: var(--yg-panel);
+  border-left: 1px solid var(--yg-line);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 45;
+}
+.yg-backlog.on {
+  display: flex;
+}
+.yg-backlog-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+.yg-backlog-item {
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--yg-line);
+  font-size: 14.5px;
+  line-height: 1.8;
+}
+.yg-backlog-name {
+  color: var(--yg-sakura);
+  font-weight: 600;
+  margin-right: 10px;
+}
+.yg-backlog-item.narration {
+  color: var(--yg-text-dim);
+}
+.yg-voice-btn {
+  margin-left: 8px;
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--yg-line);
+  background: transparent;
+  color: var(--yg-aoi);
+  cursor: pointer;
+}
+
+/* ---------- 章节题字 ---------- */
+.yg-chapter {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 35;
+}
+.yg-chapter.on {
+  display: flex;
+  animation: yg-chapter 2.4s ease forwards;
+}
+.yg-chapter span {
+  font-family: var(--yg-font-serif);
+  font-size: clamp(24px, 4.6vw, 42px);
+  letter-spacing: 0.55em;
+  margin-left: 0.55em;
+  color: var(--yg-text);
+  text-shadow: 0 2px 26px rgba(0, 0, 0, 0.9);
+}
+@keyframes yg-chapter {
+  0% { opacity: 0; }
+  18% { opacity: 1; }
+  78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ---------- 徽标 / 错误 ---------- */
+.yg-badges {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 20;
+}
+.yg-badge {
+  display: none;
+  padding: 3px 12px;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  border-radius: 999px;
+  border: 1px solid var(--yg-line);
+  background: rgba(10, 13, 20, 0.7);
+  color: var(--yg-text-dim);
+}
+.yg-badge.on {
+  display: inline-block;
+}
+.yg-error-text {
+  color: #f2b8c6;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROGRESS · 柳 Yanagi 视觉小说引擎</title>
+<!--
+  PROGRESS.html 骨架模板 · progress-tracker v2
+  规则：
+  - <style> 块为固定样式，禁止修改、禁止新增内联样式。
+  - 只填写/更新各区块中【】标注的内容；写完后删除多余的 FILL 注释。
+  - 文件末尾 </body> 前的 <!-- AUDIT --> 注释是容量审计行，每次更新必须刷新。
+-->
+<style>
+:root{
+  --bg:#f4f6f8; --card:#ffffff; --text:#1c2128; --muted:#5f6b7a; --border:#dfe4ea;
+  --accent:#2563eb; --done:#16a34a; --doing:#2563eb; --blocked:#dc2626; --paused:#d97706;
+  --bar-bg:#e8ecf1; --code-bg:#eef1f5;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#12151a; --card:#1b2027; --text:#e4e8ec; --muted:#98a3b0; --border:#2c343e;
+    --accent:#5b8cff; --done:#34c46a; --doing:#5b8cff; --blocked:#f0655a; --paused:#e8a33d;
+    --bar-bg:#28303a; --code-bg:#232a33;
+  }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+  font-size:15px; line-height:1.7;
+}
+code{background:var(--code-bg); padding:1px 5px; border-radius:4px; font-size:.9em}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+.topnav{
+  position:sticky; top:0; z-index:9; display:flex; gap:4px 14px; flex-wrap:wrap;
+  align-items:center; padding:10px 22px; background:var(--card);
+  border-bottom:1px solid var(--border);
+}
+.topnav .brand{font-weight:700; margin-right:8px}
+.topnav a{color:var(--muted); font-size:13px}
+.topnav a:hover{color:var(--accent); text-decoration:none}
+main{max-width:960px; margin:0 auto; padding:26px 20px 10px}
+section{margin:30px 0}
+h1{font-size:24px; margin:0}
+h2{
+  font-size:17px; margin:0 0 14px; padding-left:10px;
+  border-left:4px solid var(--accent);
+}
+.header .title-row{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+.header .meta{color:var(--muted); font-size:13px; margin:8px 0 0}
+.badge{
+  display:inline-block; padding:2px 12px; border-radius:999px;
+  font-size:13px; font-weight:600; color:#fff; background:var(--muted);
+}
+.badge-done{background:var(--done)} .badge-doing{background:var(--doing)}
+.badge-blocked{background:var(--blocked)} .badge-paused{background:var(--paused)}
+.stat-cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px}
+.stat-card{
+  background:var(--card); border:1px solid var(--border); border-radius:10px;
+  padding:14px 16px;
+}
+.stat-value{font-size:24px; font-weight:700; line-height:1.2}
+.stat-label{color:var(--muted); font-size:12.5px; margin-top:2px}
+.ms{display:flex; align-items:center; gap:12px; padding:7px 0}
+.ms-name{flex:0 0 200px; font-size:14px}
+.ms-bar{flex:1; height:10px; background:var(--bar-bg); border-radius:999px; overflow:hidden}
+.ms-fill{height:100%; border-radius:999px; background:var(--done)}
+.ms-fill.is-doing{background:var(--doing)} .ms-fill.is-blocked{background:var(--blocked)}
+.ms-pct{flex:0 0 44px; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; font-size:13px}
+.current-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px}
+.cur-box{
+  background:var(--card); border:1px solid var(--border); border-left:4px solid var(--muted);
+  border-radius:8px; padding:12px 16px;
+}
+.cur-box h3{margin:0 0 6px; font-size:13.5px; color:var(--muted); font-weight:600}
+.cur-box.now{border-left-color:var(--accent)}
+.cur-box.work{border-left-color:var(--doing)}
+.cur-box.stuck{border-left-color:var(--blocked)}
+.cur-box.next{border-left-color:var(--done)}
+.cur-box p{margin:0}
+.timeline{border-left:2px solid var(--border); margin-left:8px; padding-left:22px}
+.tl-item{position:relative; padding:2px 0 18px}
+.tl-dot{
+  position:absolute; left:-29px; top:7px; width:12px; height:12px; border-radius:50%;
+  background:var(--muted); border:2px solid var(--bg);
+}
+.tl-dot.done{background:var(--done)} .tl-dot.doing{background:var(--doing)}
+.tl-dot.blocked{background:var(--blocked)} .tl-dot.paused{background:var(--paused)}
+.tl-head{display:flex; gap:10px; align-items:baseline; flex-wrap:wrap}
+.tl-head time{color:var(--muted); font-size:12.5px; font-variant-numeric:tabular-nums}
+.tl-tag{
+  font-size:12px; font-weight:600; color:var(--accent);
+  background:var(--code-bg); border-radius:4px; padding:0 6px;
+}
+.tl-item p{margin:4px 0 0}
+.tl-item details{margin-top:4px; font-size:13.5px; color:var(--muted)}
+.tl-item details summary{cursor:pointer; user-select:none; font-size:12.5px}
+.data-table{width:100%; border-collapse:collapse; background:var(--card);
+  border:1px solid var(--border); border-radius:10px; overflow:hidden; font-size:14px}
+.data-table th{
+  text-align:left; padding:9px 14px; background:var(--code-bg);
+  color:var(--muted); font-size:12.5px; font-weight:600;
+}
+.data-table td{padding:9px 14px; border-top:1px solid var(--border); vertical-align:top}
+.pill{
+  display:inline-block; padding:0 9px; border-radius:999px; font-size:12px;
+  font-weight:600; color:#fff; background:var(--muted);
+}
+.pill-active{background:var(--done)} .pill-overturned{background:var(--muted)}
+.pill-high{background:var(--blocked)} .pill-mid{background:var(--paused)} .pill-low{background:var(--doing)}
+.next-list{list-style:none; margin:0; padding:0}
+.next-list li{
+  padding:7px 0 7px 30px; position:relative;
+  border-bottom:1px dashed var(--border);
+}
+.next-list li:last-child{border-bottom:none}
+.next-list li::before{
+  content:""; position:absolute; left:2px; top:12px; width:14px; height:14px;
+  border:2px solid var(--accent); border-radius:4px;
+}
+.next-list li.done::before{background:var(--done); border-color:var(--done)}
+.next-list li.done{color:var(--muted); text-decoration:line-through}
+.next-list .who{color:var(--muted); font-size:12.5px; margin-left:8px}
+.diagram{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px}
+.diagram svg{max-width:100%; height:auto; display:block}
+.diagram figcaption{color:var(--muted); font-size:12.5px; margin-top:8px; text-align:center}
+footer{
+  max-width:960px; margin:10px auto 0; padding:16px 20px 30px;
+  color:var(--muted); font-size:12.5px; border-top:1px solid var(--border);
+}
+@media print{
+  .topnav{display:none}
+  body{background:#fff; font-size:12px}
+  section{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">▸ 柳 Yanagi 视觉小说引擎</span>
+  <a href="#milestones">里程碑</a>
+  <a href="#current">当前状态</a>
+  <a href="#timeline">时间线</a>
+  <a href="#decisions">决策</a>
+  <a href="#risks">风险</a>
+  <a href="#next">下一步</a>
+</nav>
+
+<main>
+
+<header id="overview" class="header">
+  <div class="title-row">
+    <h1>柳 Yanagi 视觉小说引擎</h1>
+    <span class="badge badge-doing">doing</span>
+  </div>
+  <p class="meta">最后更新 2026-08-20 · 累计会话 1 · 当前阶段 M0 ✅ → 进入 M1</p>
+</header>
+
+<section class="stat-cards" aria-label="项目统计">
+  <div class="stat-card"><div class="stat-value">37/37</div><div class="stat-label">测试通过（单元 34 + E2E 3）</div></div>
+  <div class="stat-card"><div class="stat-value">1.7MB</div><div class="stat-label">demo 构建产物（预算 3MB）</div></div>
+  <div class="stat-card"><div class="stat-value">6+1</div><div class="stat-label">workspace 包 + canary 游戏</div></div>
+  <div class="stat-card"><div class="stat-value">9</div><div class="stat-label">决策日志条目（ADR）</div></div>
+</section>
+
+<section id="milestones">
+  <h2>里程碑（能力门）</h2>
+  <div class="ms">
+    <div class="ms-name">M0 走通闭环</div>
+    <div class="ms-bar"><div class="ms-fill" style="width:100%"></div></div>
+    <div class="ms-pct">100%</div>
+  </div>
+  <div class="ms">
+    <div class="ms-name">M1 玩家体验基线</div>
+    <div class="ms-bar"><div class="ms-fill is-doing" style="width:5%"></div></div>
+    <div class="ms-pct">5%</div>
+  </div>
+  <div class="ms">
+    <div class="ms-name">M2 商业作品功能面</div>
+    <div class="ms-bar"><div class="ms-fill" style="width:0%"></div></div>
+    <div class="ms-pct">0%</div>
+  </div>
+  <div class="ms">
+    <div class="ms-name">M3 双端发布就绪</div>
+    <div class="ms-bar"><div class="ms-fill" style="width:0%"></div></div>
+    <div class="ms-pct">0%</div>
+  </div>
+  <div class="ms">
+    <div class="ms-name">M4 持续增强</div>
+    <div class="ms-bar"><div class="ms-fill" style="width:0%"></div></div>
+    <div class="ms-pct">—</div>
+  </div>
+</section>
+
+<section id="current" class="current-grid">
+  <div class="cur-box now"><h3>现在在哪</h3><p>M0 已完成（迭代 1），引擎仓库 /home/lmz/git/yanagi</p></div>
+  <div class="cur-box work"><h3>正在做什么</h3><p>迭代 1 收尾（文档/提交），随后进入 M1</p></div>
+  <div class="cur-box stuck"><h3>卡在哪</h3><p>无（Pixi chunk 挂起/输入竞态/资源前缀三缺陷已修复，见决策 D-007~009）</p></div>
+  <div class="cur-box next"><h3>下一步</h3><p>M1：Skip（已读集）→ Auto → Backlog 完整版 → 转场全家/天气粒子</p></div>
+</section>
+
+<section id="timeline">
+  <h2>时间线 <span style="font-size:12.5px;color:var(--muted);font-weight:400">（最近 15 次会话，新的在前）</span></h2>
+  <div class="timeline">
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-head"><time>2026-08-20</time><span class="tl-tag">迭代1 · M0 全切片</span></div>
+      <p>M0 完成：解析器+内核+UI+舞台+音频+存档+demo；测试 37/37 绿，产物 1.7MB</p>
+      <details><summary>关键决策 / 踩坑</summary><p>D-007 pixi 单 chunk 防 init 挂起；D-009 输入 busy 门控防 pc 跳步死锁；E2E 前置到 M0</p></details>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-head"><time>2026-08-20</time><span class="tl-tag">M0.1 骨架</span></div>
+      <p>立项：白皮书 v1.1 定稿；建仓；迭代1 进行中（骨架+解析器+内核）</p>
+    </div>
+  </div>
+</section>
+
+<section id="decisions">
+  <h2>决策日志 <span style="font-size:12.5px;color:var(--muted);font-weight:400">（≤20 条，只留仍有效的）</span></h2>
+  <table class="data-table">
+    <thead><tr><th style="width:90px">日期</th><th style="width:150px">决策</th><th>理由 / 取代了什么</th><th style="width:80px">状态</th></tr></thead>
+    <tbody>
+      <tr><td>2026-08-20</td><td><b>D-001 手写递归下降解析器</b></td><td>行式语言报错信息更精确（文件:行:列），少一个构建期依赖；取代白皮书 v1.0 的 Peggy 方案</td><td><span class="pill pill-active">有效</span></td></tr>
+      <tr><td>2026-08-20</td><td><b>D-002 Vite 虚拟模块先行，CLI 后置</b></td><td>virtual:yanagi-game 插件先满足 dev/build，独立 CLI 入 M3；白皮书 §11 目标不变</td><td><span class="pill pill-active">有效</span></td></tr>
+      <tr><td>2026-08-20</td><td><b>D-003 demo 资产用生成脚本（SVG+WAV）</b></td><td>无 ffmpeg 环境下自包含；占位资产可重生成，接真实资产时仅换文件</td><td><span class="pill pill-active">有效</span></td></tr>
+      <tr><td>2026-08-20</td><td><b>D-004 game.json 而非 game.yaml</b></td><td>零 YAML 依赖；配置面很小，JSON 足够，避免引入解析器</td><td><span class="pill pill-active">有效</span></td></tr>
+      <tr><td>2026-08-20</td><td><b>D-006 vite 配置链相对导入</b></td><td>config loader 外部化裸导入，Node 无法加载 .ts 源；M3 dist 构建后恢复</td><td><span class="pill pill-active">有效</span></td></tr>
+      <tr><td>2026-08-20</td><td><b>D-007 pixi 单 chunk + 固定 WebGL</b></td><td>跨 chunk 循环继承使 app.init 永久挂起（无报错）；WebGPU 无头环境差异大</td><td><span class="pill pill-active">有效</span></td></tr>
+      <tr><td>2026-08-20</td><td><b>D-008 manifest URL 无 assets/ 前缀</b></td><td>publicDir 复制的是目录内容到根；带前缀 404</td><td><span class="pill pill-active">有效</span></td></tr>
+      <tr><td>2026-08-20</td><td><b>D-009 输入 busy 门控</b></td><td>过渡期二次按键致 pc 跳步 + block 悬空死锁；M1 升级 pending 队列</td><td><span class="pill pill-active">有效</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="risks">
+  <h2>风险与阻塞</h2>
+  <table class="data-table">
+    <thead><tr><th>事项</th><th style="width:90px">等级</th><th style="width:190px">应对</th><th style="width:90px">状态</th></th></tr></thead>
+    <tbody>
+      <tr><td>迭代中断/烂尾（avg.js 教训）</td><td><span class="pill pill-high">高</span></td><td>能力门+canary 测试+迭代台账（本文件与 docs/）</td><td><span class="pill pill-active">应对中</span></td></tr>
+      <tr><td>iOS Safari 音频/内存怪癖</td><td><span class="pill pill-high">高</span></td><td>手势解锁、纹理预算（M1/M3）；真机清单</td><td><span class="pill pill-low">排期中</span></td></tr>
+      <tr><td>浏览器存储逐出丢档</td><td><span class="pill pill-high">高</span></td><td>persist()+导出导入（M1）+降级策略（已实现内存降级）</td><td><span class="pill pill-low">排期中</span></td></tr>
+      <tr><td>剧本演化破坏旧存档</td><td><span class="pill pill-mid">中</span></td><td>schema+scriptHash+label 重定位（M1 完整化）</td><td><span class="pill pill-low">排期中</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="next">
+  <h2>下一步</h2>
+  <ol class="next-list">
+    <li class="done">M0.1 仓库与工具链骨架（pnpm monorepo / TS strict / Vitest / CI 占位）</li>
+    <li class="done">M0.2 剧本语言 v0.1 核心子集 + 全量错误报告（文件:行:列）</li>
+    <li class="done">M0.3 内核：VM / 表达式 / GameState / 存档快照往返</li>
+    <li class="done">M0.4 文本窗：打字机 + 注音/傍点/变速/停顿 + 两段式推进</li>
+    <li class="done">M0.5 舞台（Pixi）+ 音频四总线（Web Audio）</li>
+    <li class="done">M0.6 选择肢 + 存读档（缩略图/自动档）+ 标题画面</li>
+    <li class="done">M0.7 canary demo 成文 + 资源存在性校验 + 全量测试绿（单元 34 + E2E 3）</li>
+    <li>M1-1 Skip：已读集持久化、Tab 切换档位、Ctrl 按住快进、选择肢前停止</li>
+    <li>M1-2 Auto：等待公式全参、点击打断、等语音结束</li>
+    <li>M1-3 Backlog 完整版（200 条/语音重播/已读变色）+ 会话内回溯</li>
+    <li>M1-4 转场全家 + 天气粒子 + 章节题字打磨 + 立绘呼吸</li>
+    <li>M1-5 存档导出导入 + 兼容迁移链 + 性能预算 CI + 金像测试框架</li>
+  </ol>
+</section>
+
+<section id="diagram">
+  <h2>结构图</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 640 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="引擎分层结构">
+      <g fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="10" y="10" width="150" height="34" rx="6"/>
+        <rect x="180" y="10" width="150" height="34" rx="6"/>
+        <rect x="350" y="10" width="140" height="34" rx="6"/>
+        <rect x="510" y="10" width="120" height="34" rx="6"/>
+        <rect x="10" y="70" width="620" height="34" rx="6"/>
+        <rect x="10" y="110" width="620" height="34" rx="6"/>
+        <path d="M85 44 L85 70 M255 44 L255 70 M420 44 L420 70 M570 44 L570 70"/>
+      </g>
+      <g font-size="12" fill="currentColor" text-anchor="middle">
+        <text x="85" y="31">games/demo</text>
+        <text x="255" y="31">@yanagi/script</text>
+        <text x="420" y="31">stage/audio/ui</text>
+        <text x="570" y="31">runtime/session</text>
+        <text x="320" y="91">@yanagi/core（VM · 状态 · 表达式 · 存档）</text>
+        <text x="320" y="131">宿主：Web（Vite）→ GitHub Pages /p/&lt;slug&gt;/ · 桌面 Tauri（M3）</text>
+      </g>
+    </svg>
+    <figcaption>内核零平台依赖；剧本经编译为指令束；表现层以声明式状态驱动</figcaption>
+  </figure>
+</section>
+
+</main>
+
+<footer id="archive">
+  归档：无 ·
+  本文件由 progress-tracker v2 维护 · 打开即读，无需联网
+</footer>
+
+<!-- AUDIT: 2026-08-20 | timeline 2/15 | decisions 9/20 | size ~14KB/80KB -->
+</body>
+</html>
