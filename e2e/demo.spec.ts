@@ -27,7 +27,13 @@ test('demo 全流程：标题 → 开场 → 选择肢(stay 分支) → 结局 �
   const choices = page.locator('.yg-choices.on');
   const reached = await advanceUntil(page, async () => (await choices.count()) > 0);
   expect(reached, '应在有限步数内出现选择肢').toBe(true);
+  // 选择肢应纵向排列（同 x，不同 y）
   await expect(choices.locator('.yg-choice-btn')).toHaveCount(3);
+  const choiceBtns = await choices.locator('.yg-choice-btn').all();
+  const boxes = await Promise.all(choiceBtns.map((b) => b.boundingBox()));
+  expect(boxes).toHaveLength(3);
+  expect(Math.abs(boxes[0]!.x - boxes[1]!.x)).toBeLessThan(4);
+  expect(boxes[1]!.y).toBeGreaterThan(boxes[0]!.y);
 
   // 选「留下来陪你」→ smile 差分分支文本
   await choices.getByText('留下来陪你').click();
@@ -64,7 +70,12 @@ test('存读档往返：暂停保存 → 回标题 → 继续续玩', async ({ p
   await page.keyboard.press('Escape');
   await expect(page.locator('.yg-overlay.on')).toBeVisible();
   await page.getByRole('button', { name: '保存进度' }).click();
-  await page.locator('.yg-save-slot').first().click();
+  // 保存模式下自动/快速槽应禁用（前 4 个：自动 A/B/C + 快速）
+  const saveButtons = page.locator('.yg-save-slot');
+  for (let i = 0; i < 4; i++) {
+    await expect(saveButtons.nth(i)).toBeDisabled();
+  }
+  await saveButtons.nth(4).click(); // 存档 1
   await page.waitForTimeout(500); // 写档（含截图）
 
   // 回标题 → 一键继续

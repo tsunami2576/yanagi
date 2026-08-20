@@ -52,6 +52,8 @@ export class Stage {
   private particles: Particle[] = [];
   private particleTex = new Map<string, Texture>();
   private weatherClock = 0;
+  private idlePhase = new Map<string, number>();
+  private idleClock = 0;
   readonly ready: Promise<void>;
 
   constructor(parent: HTMLElement) {
@@ -78,6 +80,7 @@ export class Stage {
     this.root.addChild(this.bgLayer, this.spriteLayer, this.weatherLayer, this.fxLayer);
     this.app.renderer.on('resize', () => this.layout());
     this.app.ticker.add((ticker) => this.tickWeather(ticker.deltaMS / 1000));
+    this.app.ticker.add((ticker) => this.tickIdle(ticker.deltaMS / 1000));
     this.layout();
   }
 
@@ -170,16 +173,73 @@ export class Stage {
       this.setBg(tex);
       await this.tween(spec.ms / 2, (t) => (veil.alpha = 1 - t));
       veil.destroy();
-    } else {
+      return;
+    }
+    if (spec.type === 'slide') {
       const old = this.bgSprite;
-      this.setBg(tex, 0);
+      this.setBg(tex, 1);
       const cur = this.bgSprite!;
+      const d = ({ l: [-1, 0], r: [1, 0], u: [0, -1], d: [0, 1] } as const)[spec.dir ?? 'l'];
+      const curRest = { x: cur.x, y: cur.y };
+      const oldRest = old ? { x: old.x, y: old.y } : null;
+      cur.x = curRest.x + d[0] * DESIGN_W;
+      cur.y = curRest.y + d[1] * DESIGN_H;
       await this.tween(spec.ms, (t) => {
-        cur.alpha = t;
-        if (old) old.alpha = 1 - t;
+        cur.x = curRest.x + d[0] * DESIGN_W * (1 - t);
+        cur.y = curRest.y + d[1] * DESIGN_H * (1 - t);
+        if (old && oldRest) {
+          old.x = oldRest.x - d[0] * DESIGN_W * t;
+          old.y = oldRest.y - d[1] * DESIGN_H * t;
+        }
       });
       old?.destroy();
+      return;
     }
+    if (spec.type === 'blinds' || spec.type === 'circle' || spec.type === 'feather') {
+      const old = this.bgSprite;
+      this.setBg(tex, 1);
+      const cur = this.bgSprite!;
+      const g = new Graphics();
+      this.bgLayer.addChild(g);
+      cur.mask = g;
+      const draw = (p: number): void => {
+        g.clear();
+        if (spec.type === 'circle') {
+          const r = p * Math.hypot(DESIGN_W / 2, DESIGN_H / 2) * 1.05;
+          g.circle(DESIGN_W / 2, DESIGN_H / 2, r).fill(0xffffff);
+        } else if (spec.type === 'blinds') {
+          const k = 8;
+          const h = DESIGN_H / k;
+          for (let i = 0; i < k; i++) {
+            const w = DESIGN_W * clamp01(p * (k + 1) - i);
+            if (w > 0) g.rect(0, i * h, w, h + 1).fill(0xffffff);
+          }
+        } else {
+          // feather：垂直条带自上而下级联（羽化的近似实现）
+          const k = 6;
+          const w = DESIGN_W / k;
+          for (let i = 0; i < k; i++) {
+            const h = DESIGN_H * clamp01(p * (k + 1) - i);
+            if (h > 0) g.rect(i * w, 0, w + 1, h).fill(0xffffff);
+          }
+        }
+      };
+      draw(0);
+      await this.tween(spec.ms, draw);
+      cur.mask = null;
+      g.destroy();
+      old?.destroy();
+      return;
+    }
+    // cross
+    const old = this.bgSprite;
+    this.setBg(tex, 0);
+    const cur = this.bgSprite!;
+    await this.tween(spec.ms, (t) => {
+      cur.alpha = t;
+      if (old) old.alpha = 1 - t;
+    });
+    old?.destroy();
   }
 
   private async syncSprites(next: StageState, resolver: StageResolver, restore: boolean): Promise<void> {
@@ -218,6 +278,7 @@ export class Stage {
     holder.y = DESIGN_H;
     holder.alpha = 0;
     holder.zIndex = x;
+    this.idlePhase.set(id, Math.random() * Math.PI * 2);
     const sprite = new Sprite(tex);
     sprite.anchor.set(0.5, 1);
     sprite.scale.set(SPRITE_H / tex.height);
@@ -257,6 +318,7 @@ export class Stage {
     const entry = this.spriteMap.get(id);
     if (!entry) return;
     this.spriteMap.delete(id);
+    this.idlePhase.delete(id);
     if (restore) {
       entry.holder.destroy();
       return;
@@ -416,6 +478,16 @@ export class Stage {
     }
   }
 
+  /** 立绘待机呼吸（±2.5px，约 3.2s 周期，相位按角色错开）。 */
+  private tickIdle(dt: number): void {
+    if (!this.spriteMap.size) return;
+    this.idleClock += dt;
+    for (const [id, e] of this.spriteMap) {
+      const phase = this.idlePhase.get(id) ?? 0;
+      e.holder.y = DESIGN_H + Math.sin(this.idleClock * 1.96 + phase) * 2.5;
+    }
+  }
+
   destroy(): void {
     for (const [, e] of this.spriteMap) e.holder.destroy();
     this.spriteMap.clear();
@@ -425,4 +497,8 @@ export class Stage {
 
 function lerpTo(from: number, to: number, t: number): number {
   return from + (to - from) * t;
+}
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
 }

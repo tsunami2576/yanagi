@@ -455,15 +455,47 @@ export function compileStory(input: CompileInput): CompileResult {
     if (raw === undefined) return undefined;
     const s = raw.trim();
     if (s === 'none') return { type: 'none', ms: 0 };
-    const num = toMs(s);
-    if (num !== null) return { type: 'cross', ms: num };
-    const m = /^([a-z]+):(\d+(?:\.\d+)?)(ms|s)?$/.exec(s);
-    if (m) {
-      const ms = toMs(`${m[2]}${m[3] ?? ''}`);
-      if (ms !== null) return { type: 'fade', color: m[1]!, ms };
+    // 纯时长 → cross
+    const bare = toMs(s);
+    if (bare !== null) return { type: 'cross', ms: bare };
+    const parts = s.split(':');
+    const kind = parts[0];
+    const known = ['cross', 'fade', 'slide', 'blinds', 'circle', 'feather'];
+    if (!kind) {
+      sink.error(node.file, node.line, 1, `转场参数为空`);
+      return undefined;
     }
-    sink.error(node.file, node.line, 1, `转场参数应为 时长（800 / 1.2s）或 颜色:时长（black:1000），得到 "${raw}"`);
-    return undefined;
+    if (!known.includes(kind)) {
+      // 兼容颜色简写：black:1000 / white:600 / #hex:800 → fade
+      const color = kind;
+      const msPart = parts[1];
+      const ms = msPart !== undefined ? toMs(msPart) : null;
+      const validColor = color === 'black' || color === 'white' || /^#[0-9a-fA-F]{3,8}$/.test(color);
+      if (parts.length === 2 && ms !== null && validColor) {
+        return { type: 'fade', color, ms };
+      }
+      sink.error(
+        node.file,
+        node.line,
+        1,
+        `转场应为 时长（800 / 1.2s）、颜色:时长（black:1000）或 类型[:参数]:时长（slide:l:400 / blinds:600），得到 "${raw}"`,
+      );
+      return undefined;
+    }
+    let ms = 500;
+    let color: string | undefined;
+    let dir: TransitionSpec['dir'];
+    for (const part of parts.slice(1)) {
+      const t = toMs(part);
+      if (t !== null) ms = t;
+      else if (kind === 'fade') color = part;
+      else if (kind === 'slide' && ['l', 'r', 'u', 'd'].includes(part)) dir = part as TransitionSpec['dir'];
+      else {
+        sink.error(node.file, node.line, 1, `转场 "${kind}" 的参数 "${part}" 无法识别`);
+        return undefined;
+      }
+    }
+    return { type: kind as TransitionSpec['type'], ...(color ? { color } : {}), ...(dir ? { dir } : {}), ms };
   }
 
   walk(nodes);

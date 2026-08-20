@@ -76,8 +76,11 @@ export interface AudioState {
 // ---------- 转场与表现事件 ----------
 
 export interface TransitionSpec {
-  type: 'cross' | 'fade' | 'none';
+  type: 'cross' | 'fade' | 'slide' | 'blinds' | 'circle' | 'feather' | 'none';
+  /** fade 的过渡色（black/white/#hex） */
   color?: string;
+  /** slide 方向 */
+  dir?: 'l' | 'r' | 'u' | 'd';
   ms: number;
 }
 

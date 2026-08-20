@@ -27,6 +27,15 @@ const AUTO_SLOTS = ['auto:0', 'auto:1', 'auto:2'];
 const MANUAL_SLOTS = ['quick', 'm0', 'm1', 'm2', 'm3', 'm4', 'm5'];
 const ALL_SLOTS = [...AUTO_SLOTS, ...MANUAL_SLOTS];
 
+function blobToDataURL(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
 function slotLabel(slot: string): string {
   if (slot.startsWith('auto:')) return `自动 ${['A', 'B', 'C'][Number(slot.slice(5))] ?? ''}`;
   if (slot === 'quick') return '快速';
@@ -49,6 +58,9 @@ export class GameSession {
   private skipHeld = false;
   private readSet = new Set<string>();
   private unlocked = new Set<string>();
+  /** 本局开始时的已读快照（回想中"以前读过"变色判定） */
+  private readBaseline = new Set<string>();
+  private lastSaveMenu: { mode: 'save' | 'load'; origin: 'title' | 'pause' } | null = null;
   private readDirty = 0;
   private thumbUrls = new Map<Blob, string>();
   private destroyed = false;
@@ -103,6 +115,8 @@ export class GameSession {
         this.applySettings(s);
       },
       replayVoice: (voice: string) => void this.playVoice(voice, false),
+      exportSaves: () => void this.exportSaves(),
+      importFile: (file: File) => void this.importFile(file),
       panelClosed: () => {
         if (this.ui.titleOpen) return;
         // 从标题打开的读档/设置关闭后回到标题语境
@@ -219,6 +233,7 @@ export class GameSession {
   private async beginNewGame(): Promise<void> {
     await this.mixer.unlock();
     this.ui.hideTitle();
+    this.readBaseline = new Set(this.readSet);
     const st = initialState(this.def.bundle);
     this.vm = new ScriptVM(this.def.bundle, st);
     await this.applyFullState(st);
@@ -632,6 +647,7 @@ export class GameSession {
     this.ui.hideTitle();
     this.ui.closeSaveMenu();
     this.resetModes();
+    this.readBaseline = new Set(this.readSet);
     this.vm = new ScriptVM(this.def.bundle, state);
     await this.applyFullState(state);
     this.continueLoop();
@@ -654,11 +670,13 @@ export class GameSession {
 
   private async openSaveFrom(origin: 'title' | 'pause'): Promise<void> {
     const slots = await this.collectSlots();
+    this.lastSaveMenu = { mode: 'save', origin };
     this.ui.openSaveMenu('save', origin, slots);
   }
 
   private async openLoadFrom(origin: 'title' | 'pause'): Promise<void> {
     const slots = await this.collectSlots();
+    this.lastSaveMenu = { mode: 'load', origin };
     this.ui.openSaveMenu('load', origin, slots);
   }
 
@@ -729,7 +747,92 @@ export class GameSession {
     this.ui.applySettings(s);
   }
 
-  private history(): BacklogEntry[] {
-    return this.vm?.state.history.slice().reverse() ?? [];
+  private history(): (import('@yanagi/core').BacklogEntry & { read?: boolean })[] {
+    if (!this.vm) return [];
+    return this.vm.state.history
+      .map((e) => ({ ...e, read: this.readBaseline.has(e.uid) }))
+      .reverse();
+  }
+
+  // ---------- 存档导出 / 导入 ----------
+
+  async exportSaves(): Promise<void> {
+    const saves: Record<string, unknown> = {};
+    for (const slot of ALL_SLOTS) {
+      const data = await this.readSave(slot);
+      if (!data) continue;
+      const entry: Record<string, unknown> = { ...data };
+      delete entry['thumbnail'];
+      if (data.thumbnail) entry['thumbnailData'] = await blobToDataURL(data.thumbnail);
+      saves[slot] = entry;
+    }
+    const payload = {
+      format: 'yanagi-saves',
+      version: 1,
+      game: this.def.id,
+      exportedAt: Date.now(),
+      read: [...this.readSet],
+      unlocked: [...this.unlocked],
+      saves,
+    };
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `yanagi-${this.def.id}-saves-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  async importFile(file: File): Promise<void> {
+    try {
+      const payload = JSON.parse(await file.text()) as {
+        format?: string;
+        version?: number;
+        game?: string;
+        read?: string[];
+        unlocked?: string[];
+        saves?: Record<string, Record<string, unknown>>;
+      };
+      if (payload.format !== 'yanagi-saves' || payload.version !== 1) {
+        throw new Error('不是有效的柳引擎存档文件');
+      }
+      if (payload.game !== this.def.id) {
+        throw new Error(`存档属于游戏 "${payload.game}"，与当前游戏不匹配`);
+      }
+      let imported = 0;
+      for (const [slot, raw] of Object.entries(payload.saves ?? {})) {
+        if (!ALL_SLOTS.includes(slot)) continue;
+        const incomingSavedAt = typeof raw['savedAt'] === 'number' ? raw['savedAt'] : 0;
+        const existing = await this.readSave(slot);
+        if (existing && existing.savedAt >= incomingSavedAt) continue;
+        let thumbnail: Blob | undefined;
+        if (typeof raw['thumbnailData'] === 'string') {
+          thumbnail = await (await fetch(raw['thumbnailData'])).blob();
+        }
+        const entry = { ...raw };
+        delete entry['thumbnailData'];
+        await this.opts.storage.set(`save:${slot}`, {
+          ...entry,
+          state: entry['state'],
+          version: 1,
+          game: this.def.id,
+          ...(thumbnail ? { thumbnail } : {}),
+        });
+        imported++;
+      }
+      for (const uid of payload.read ?? []) this.readSet.add(uid);
+      for (const u of payload.unlocked ?? []) this.unlocked.add(u);
+      await this.flushGlobals();
+      if (this.lastSaveMenu) {
+        const { mode, origin } = this.lastSaveMenu;
+        if (mode === 'save') await this.openSaveFrom(origin);
+        else await this.openLoadFrom(origin);
+      }
+      console.info(`[yanagi] 导入完成：${imported} 个存档`);
+    } catch (e) {
+      console.error('[yanagi] 导入失败', e);
+      this.ui.showError(`导入失败：${(e as Error).message}`);
+    }
   }
 }

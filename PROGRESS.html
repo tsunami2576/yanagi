@@ -176,8 +176,8 @@ footer{
   </div>
   <div class="ms">
     <div class="ms-name">M1 玩家体验基线</div>
-    <div class="ms-bar"><div class="ms-fill is-doing" style="width:45%"></div></div>
-    <div class="ms-pct">45%</div>
+    <div class="ms-bar"><div class="ms-fill is-doing" style="width:80%"></div></div>
+    <div class="ms-pct">80%</div>
   </div>
   <div class="ms">
     <div class="ms-name">M2 商业作品功能面</div>
@@ -206,6 +206,11 @@ footer{
 <section id="timeline">
   <h2>时间线 <span style="font-size:12.5px;color:var(--muted);font-weight:400">（最近 15 次会话，新的在前）</span></h2>
   <div class="timeline">
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-head"><time>2026-08-20</time><span class="tl-tag">迭代3 · 双bug+M1后半</span></div>
+      <p>选择肢纵向/系统槽禁用修复；转场全家+立绘呼吸+回想变色+存档导出导入；E2E 5/5</p>
+    </div>
     <div class="tl-item">
       <div class="tl-dot done"></div>
       <div class="tl-head"><time>2026-08-20</time><span class="tl-tag">迭代2 · hotfix+M1前半</span></div>
@@ -273,9 +278,11 @@ footer{
     <li class="done">M1-1 Skip：已读集、Tab 档位、Ctrl 快进、选择肢前停止（迭代2）</li>
     <li class="done">M1-2 Auto：等待公式全参、点击打断、等语音结束（迭代2）</li>
     <li class="done">M1-4a 天气粒子五预设 + 徽标 + 自动等待设置（迭代2）</li>
-    <li>M1-3 Backlog 完整版（已读变色/滚动优化）+ 会话内回溯</li>
-    <li>M1-4b 转场全家（slide/blinds/circle/feather）+ 章节题字打磨 + 立绘呼吸</li>
-    <li>M1-5 存档导出导入 + 兼容迁移链 + 性能预算 CI + 金像测试框架</li>
+    <li class="done">M1-3a Backlog 语音重播 + 已读浅色标注（迭代3）</li>
+    <li class="done">M1-4b 转场全家（cross/fade/slide/blinds/circle/feather）+ 立绘呼吸（迭代3）</li>
+    <li class="done">M1-5a 存档导出导入（JSON、缩略图内嵌、进度并集合并）（迭代3）</li>
+    <li>M1-6 会话内回溯（rollback 环缓冲）+ 失焦静音设置项</li>
+    <li>M1-7 性能预算 CI（首包 ≤3MB/TTI ≤3s）+ 金像截图测试框架</li>
   </ol>
 </section>
 
@@ -312,6 +319,6 @@ footer{
   本文件由 progress-tracker v2 维护 · 打开即读，无需联网
 </footer>
 
-<!-- AUDIT: 2026-08-20 | timeline 4/15 | decisions 9/20 | size ~15KB/80KB -->
+<!-- AUDIT: 2026-08-20 | timeline 5/15 | decisions 9/20 | size ~15KB/80KB -->
 </body>
 </html>

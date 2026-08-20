@@ -49,6 +49,7 @@ nao「哟，还没走呢。」voice=nao_0101
 
 nao「走吧，去[b]天台[/b]看看——今天的[color=#e58b9c]夕阳[/color]会很漂亮。」voice=nao_0104
 @weather sakura density=0.5
+@bg hallway fade=slide:l:600
 @call common_rooftop
 
 #ch1_finale

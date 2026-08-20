@@ -35,6 +35,8 @@ export interface UIHooks {
   loadSlot(slot: string): void;
   settingsChange(s: Settings): void;
   replayVoice(voice: string): void;
+  exportSaves(): void;
+  importFile(file: File): void;
   /** 面板被用户关闭（用于判断是否回到标题等上下文） */
   panelClosed(): void;
 }
@@ -152,7 +154,12 @@ export class GameUI {
       `<div class="yg-panel" style="width:min(680px,94vw)">
          <h2 class="yg-save-title"></h2>
          <div class="yg-save-grid"></div>
-         <button class="yg-btn yg-close" style="margin-top:16px">关 闭</button>
+         <div class="yg-save-tools">
+           <button class="yg-btn yg-export">导出存档</button>
+           <button class="yg-btn yg-import">导入存档</button>
+           <button class="yg-btn yg-close" style="flex:1">关 闭</button>
+         </div>
+         <input type="file" accept="application/json,.json" style="display:none">
        </div>`,
     );
     this.saveTitle = this.saveEl.querySelector('.yg-save-title')!;
@@ -379,15 +386,18 @@ export class GameUI {
     this.saveTitle.textContent = mode === 'save' ? '保存进度' : '读取进度';
     this.saveGrid.replaceChildren();
     for (const slot of slots) {
+      // 保存模式下，自动/快速槽由系统占用，不允许手动写入
+      const system = mode === 'save' && (slot.slot.startsWith('auto:') || slot.slot === 'quick');
       const btn = document.createElement('button');
       btn.className = 'yg-save-slot';
+      btn.disabled = system;
       const time = slot.empty ? '' : new Date(slot.savedAt).toLocaleString('zh-CN', { hour12: false });
       btn.innerHTML = slot.thumbUrl
         ? `<img class="yg-save-thumb" src="${slot.thumbUrl}" alt="">`
         : `<div class="yg-save-thumb"></div>`;
       const meta = document.createElement('div');
       meta.className = 'yg-save-meta';
-      meta.innerHTML = `<b>${slot.label}</b>${slot.empty ? '— 空 —' : `${escapeHtml(slot.chapterTitle || '序章')}<br>${escapeHtml(slot.lineSummary)}<br>${time}`}`;
+      meta.innerHTML = `<b>${slot.label}</b>${slot.empty ? (system ? '系统槽位' : '— 空 —') : `${escapeHtml(slot.chapterTitle || '序章')}<br>${escapeHtml(slot.lineSummary)}<br>${time}`}`;
       btn.appendChild(meta);
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -409,12 +419,13 @@ export class GameUI {
 
   // ---------- 想起 ----------
 
-  openBacklog(entries: BacklogEntry[]): void {
+  openBacklog(entries: (BacklogEntry & { read?: boolean })[]): void {
     this.backlogList.replaceChildren();
     const frag = document.createDocumentFragment();
     for (const e of entries) {
       const item = document.createElement('div');
-      item.className = 'yg-backlog-item' + (e.speaker ? '' : ' narration');
+      item.className =
+        'yg-backlog-item' + (e.speaker ? '' : ' narration') + (e.read ? ' read' : '');
       const name = document.createElement('span');
       name.className = 'yg-backlog-name';
       name.textContent = e.name ?? '';
@@ -442,7 +453,7 @@ export class GameUI {
     this.backlogEl.classList.remove('on');
   }
 
-  toggleBacklog(entries: BacklogEntry[]): void {
+  toggleBacklog(entries: (BacklogEntry & { read?: boolean })[]): void {
     if (this.backlogOpen) this.closeBacklog();
     else this.openBacklog(entries);
   }
@@ -506,6 +517,20 @@ export class GameUI {
         this.hooks.panelClosed();
       });
     }
+    this.saveEl.querySelector('.yg-export')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.hooks.exportSaves();
+    });
+    const importInput = this.saveEl.querySelector<HTMLInputElement>('input[type="file"]');
+    this.saveEl.querySelector('.yg-import')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      importInput?.click();
+    });
+    importInput?.addEventListener('change', () => {
+      const file = importInput.files?.[0];
+      importInput.value = '';
+      if (file) this.hooks.importFile(file);
+    });
     this.backlogEl.querySelector('.yg-close')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.closeBacklog();
