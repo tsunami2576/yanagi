@@ -84,6 +84,8 @@ export interface TransitionSpec {
 export interface TransitionHints {
   bg?: TransitionSpec;
   spriteMs?: number;
+  /** @weather density 参数（0–1） */
+  weatherDensity?: number;
 }
 
 export type EngineEvent =

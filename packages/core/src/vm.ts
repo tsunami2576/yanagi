@@ -257,7 +257,7 @@ export class ScriptVM {
         break;
       case 'weather':
         st.weather = a.preset === 'off' ? null : (a.preset as string);
-        this.events.push({ t: 'stage', hints: {} });
+        this.events.push({ t: 'stage', hints: { weatherDensity: a.density as number | undefined } });
         break;
       case 'filter':
         st.filter = a.name === 'off' ? null : (a.name as string);

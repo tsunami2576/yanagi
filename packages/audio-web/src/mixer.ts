@@ -37,6 +37,11 @@ export class AudioMixer {
     return this.ctx?.state === 'running';
   }
 
+  /** 是否有语音正在播放（Auto 模式等待语音结束用） */
+  get voicePlaying(): boolean {
+    return this.voice !== null;
+  }
+
   private ensureCtx(): AudioContext {
     if (this.ctx) return this.ctx;
     const AC: typeof AudioContext =

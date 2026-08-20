@@ -81,9 +81,49 @@ test('存读档往返：暂停保存 → 回标题 → 继续续玩', async ({ p
   expect(pageErrors, `页面异常：${pageErrors.join('\n')}`).toEqual([]);
 });
 
+test('Auto 模式：无输入自动推进，A 键开关', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /开\s*始/ }).click();
+  await expect(page.locator('.yg-textwin.on')).toBeVisible({ timeout: 15_000 });
+
+  await page.keyboard.press('a');
+  await expect(page.locator('.yg-badge-auto.on')).toBeVisible();
+  let changes = 0;
+  let last = await page.locator('.yg-text').textContent();
+  const deadline = Date.now() + 12_000;
+  while (Date.now() < deadline && changes < 2) {
+    await page.waitForTimeout(400);
+    const cur = await page.locator('.yg-text').textContent();
+    if (cur && cur !== last) {
+      changes++;
+      last = cur;
+    }
+  }
+  expect(changes, 'Auto 应在无输入下推进多行').toBeGreaterThanOrEqual(2);
+  await page.keyboard.press('a');
+  await expect(page.locator('.yg-badge-auto.on')).toHaveCount(0);
+});
+
+test('Skip：已读模式遇未读停止；全部模式跳到选择肢并停止', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /开\s*始/ }).click();
+  await expect(page.locator('.yg-textwin.on')).toBeVisible({ timeout: 15_000 });
+
+  // 第一次 Tab = 仅已读：全新进度在首个未读行处自动停止
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.yg-badge-skip.on')).toBeVisible();
+  await expect(page.locator('.yg-badge-skip.on')).toHaveCount(0, { timeout: 4000 });
+
+  // 再按两次 = 跳全部：快速推进到选择肢前停止
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.yg-choices.on')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.yg-badge-skip.on')).toHaveCount(0);
+});
+
 test('设置面板可打开并调节音量', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /设\s*置/ }).click();
   await expect(page.locator('.yg-overlay.on')).toBeVisible();
-  await expect(page.locator('.yg-set-row')).toHaveCount(6);
+  await expect(page.locator('.yg-set-row')).toHaveCount(7);
 });

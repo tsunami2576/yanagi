@@ -43,6 +43,10 @@ export class GameSession {
   private busy = false;
   private autoPtr = 0;
   private waitTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  private autoMode = false;
+  private skipMode: 'off' | 'read' | 'all' = 'off';
+  private skipHeld = false;
   private readSet = new Set<string>();
   private unlocked = new Set<string>();
   private readDirty = 0;
@@ -73,6 +77,7 @@ export class GameSession {
   destroy(): void {
     this.destroyed = true;
     if (this.waitTimer) clearTimeout(this.waitTimer);
+    if (this.pendingTimer) clearTimeout(this.pendingTimer);
     this.stage.destroy();
   }
 
@@ -131,12 +136,27 @@ export class GameSession {
         this.onAdvance();
       } else if (e.key === 'l' || e.key === 'L') {
         e.preventDefault();
-        this.ui.toggleBacklog(this.history());
+        if (!this.ui.titleOpen && !this.ui.overlayOpen) this.ui.toggleBacklog(this.history());
+      } else if (e.key === 'a' || e.key === 'A') {
+        if (!this.ui.titleOpen && !this.ui.overlayOpen && this.vm) {
+          e.preventDefault();
+          this.setAuto(!this.autoMode);
+        }
+      } else if (e.key === 'Tab') {
+        if (!this.ui.titleOpen && !this.ui.overlayOpen && this.vm) {
+          e.preventDefault();
+          this.cycleSkip();
+        }
+      } else if (e.key === 'Control' && !e.repeat) {
+        this.beginCtrlSkip();
       } else if (e.key === 'f' || e.key === 'F') {
         e.preventDefault();
         if (document.fullscreenElement) void document.exitFullscreen();
         else void document.documentElement.requestFullscreen().catch(() => undefined);
       }
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'Control') this.endCtrlSkip();
     });
 
     // 音频解锁：任何首次手势
@@ -225,6 +245,7 @@ export class GameSession {
   private async backToTitle(): Promise<void> {
     if (this.vm) await this.saveGame('quick');
     if (this.waitTimer) clearTimeout(this.waitTimer);
+    this.resetModes();
     this.block = null;
     this.vm = null;
     this.busy = false;
@@ -265,27 +286,38 @@ export class GameSession {
     if (!this.vm) return;
     try {
       for (;;) {
-        const block = this.vm.run();
+        const block = this.vm.run(this.skipActive);
         this.block = block;
         await this.handleEvents();
         switch (block.kind) {
           case 'dialogue': {
+            // wasRead 须在 handleEvents（标记已读）之前取
+            const wasRead = this.readSet.has(block.uid);
+            if (this.skipActive && this.skipMode === 'read' && !wasRead && !this.skipHeld) {
+              this.setSkip('off'); // 仅已读模式遇到未读行：停止跳过，正常显示
+            }
             const ch = this.def.characters.find((c) => c.id === block.line.speaker);
-            this.ui.showDialogue(
-              {
-                displayName: block.line.displayName,
-                color: ch?.color ?? null,
-                segments: block.line.segments,
-              },
-              {
-                cps: this.settings.textCps,
-                instant: this.settings.textCps <= 0,
-              },
-            );
+            const view = {
+              displayName: block.line.displayName,
+              color: ch?.color ?? null,
+              segments: block.line.segments,
+            };
+            const skipping = this.skipActive;
+            this.ui.showDialogue(view, {
+              cps: this.settings.textCps,
+              instant: skipping || this.settings.textCps <= 0,
+            });
+            if (skipping) {
+              this.mixer.stopVoice();
+              this.scheduleAdvance(45);
+              return;
+            }
             if (block.line.voice) void this.playVoice(block.line.voice);
+            if (this.autoMode) this.scheduleAuto(block.line.plainText.length);
             return;
           }
           case 'menu': {
+            if (this.skipMode !== 'off') this.setSkip('off'); // 选择肢前停止跳过（Auto 暂停等待选择）
             this.ui.hideText();
             this.ui.showChoices(block.prompt ?? null, block.options, (i) => {
               this.pick(i);
@@ -312,6 +344,138 @@ export class GameSession {
       this.ui.showError(`运行时错误：${(e as Error).message}\n\n进度已自动保存到「快速」槽。`);
       await this.saveGame('quick');
     }
+  }
+
+  // ---------- Auto / Skip ----------
+
+  private get skipActive(): boolean {
+    return this.skipMode !== 'off' || this.skipHeld;
+  }
+
+  private clearPending(): void {
+    if (this.pendingTimer !== null) {
+      clearTimeout(this.pendingTimer);
+      this.pendingTimer = null;
+    }
+  }
+
+  private setAuto(on: boolean): void {
+    this.autoMode = on;
+    if (on) {
+      this.setSkip('off');
+      this.clearPending();
+    } else {
+      this.clearPending();
+    }
+    this.ui.setBadge('auto', on);
+    if (on && this.block?.kind === 'dialogue') this.scheduleAuto(this.currentLineChars());
+  }
+
+  private cycleSkip(): void {
+    this.setSkip(this.skipMode === 'off' ? 'read' : this.skipMode === 'read' ? 'all' : 'off');
+  }
+
+  private setSkip(mode: 'off' | 'read' | 'all'): void {
+    this.skipMode = mode;
+    if (mode !== 'off') {
+      this.autoMode = false;
+      this.ui.setBadge('auto', false);
+      this.clearPending();
+      this.mixer.stopVoice();
+      this.ui.setBadge('skip', true, mode === 'read' ? 'SKIP·已读' : 'SKIP·全部');
+      if (this.block?.kind === 'dialogue') {
+        this.ui.completeText();
+        this.scheduleAdvance(45);
+      }
+    } else {
+      this.clearPending();
+      this.ui.setBadge('skip', false, 'SKIP');
+    }
+  }
+
+  private beginCtrlSkip(): void {
+    if (this.skipHeld || !this.vm || this.ui.titleOpen || this.ui.overlayOpen) return;
+    this.skipHeld = true;
+    this.mixer.stopVoice();
+    this.ui.setBadge('skip', true, 'SKIP▶');
+    if (this.block?.kind === 'dialogue') {
+      this.ui.completeText();
+      this.scheduleAdvance(60);
+    }
+  }
+
+  private endCtrlSkip(): void {
+    this.skipHeld = false;
+    if (this.skipMode === 'off') {
+      this.clearPending();
+      this.ui.setBadge('skip', false, 'SKIP');
+    }
+  }
+
+  private currentLineChars(): number {
+    if (this.block?.kind === 'dialogue') return this.block.line.plainText.length;
+    return 0;
+  }
+
+  /** 定时推进（Skip 快进 / Auto 尾延共用）。 */
+  private scheduleAdvance(delayMs: number): void {
+    this.clearPending();
+    this.pendingTimer = setTimeout(() => {
+      this.pendingTimer = null;
+      this.timerAdvance();
+    }, delayMs);
+  }
+
+  private timerAdvance(): void {
+    if (!this.vm || this.busy) return;
+    if (this.block?.kind !== 'dialogue') return;
+    if (this.ui.overlayOpen || this.ui.titleOpen || this.ui.backlogOpen) {
+      this.scheduleAdvance(300); // 面板打开期间挂起，稍后重试
+      return;
+    }
+    if (this.ui.textPlaying) {
+      if (this.skipActive) this.ui.completeText();
+      else {
+        this.scheduleAuto(this.currentLineChars());
+        return;
+      }
+    }
+    this.block = null;
+    this.mixer.stopVoice();
+    this.vm.finishDialogue();
+    this.handleEvents();
+    this.continueLoop();
+  }
+
+  /** Auto：等文本完成 + 语音播完，再等尾延。 */
+  private scheduleAuto(chars: number): void {
+    this.clearPending();
+    const tick = (): void => {
+      if (!this.autoMode || !this.vm || this.block?.kind !== 'dialogue') return;
+      if (this.ui.overlayOpen || this.ui.titleOpen || this.ui.backlogOpen) {
+        this.pendingTimer = setTimeout(tick, 300);
+        return;
+      }
+      if (this.ui.textPlaying || this.mixer.voicePlaying) {
+        this.pendingTimer = setTimeout(tick, 120);
+        return;
+      }
+      const tail = Math.max(200, this.settings.autoBaseMs + chars * this.settings.autoPerCharMs);
+      this.pendingTimer = setTimeout(() => {
+        this.pendingTimer = null;
+        if (this.autoMode) this.timerAdvance();
+      }, tail);
+    };
+    tick();
+  }
+
+  private resetModes(): void {
+    this.autoMode = false;
+    this.skipMode = 'off';
+    this.skipHeld = false;
+    this.clearPending();
+    this.ui.setBadge('auto', false);
+    this.ui.setBadge('skip', false, 'SKIP');
   }
 
   private pick(i: number): void {
@@ -467,6 +631,7 @@ export class GameSession {
     await this.mixer.unlock();
     this.ui.hideTitle();
     this.ui.closeSaveMenu();
+    this.resetModes();
     this.vm = new ScriptVM(this.def.bundle, state);
     await this.applyFullState(state);
     this.continueLoop();

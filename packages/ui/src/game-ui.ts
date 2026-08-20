@@ -74,6 +74,8 @@ export class GameUI {
   private readonly chapterEl: HTMLElement;
   private readonly errorEl: HTMLElement;
   private readonly errorTextEl: HTMLElement;
+  private readonly badgeAuto: HTMLElement;
+  private readonly badgeSkip: HTMLElement;
 
   private choiceButtons: HTMLButtonElement[] = [];
   private choiceSel = 0;
@@ -101,7 +103,9 @@ export class GameUI {
     this.stageMount = mk('yg-stage');
     this.textWindow = new TextWindow(root);
     this.chapterEl = mk('yg-chapter', '<span></span>');
-    mk('yg-badges', '<span class="yg-badge yg-badge-auto">AUTO</span><span class="yg-badge yg-badge-skip">SKIP</span>');
+    const badges = mk('yg-badges', '<span class="yg-badge yg-badge-auto">AUTO</span><span class="yg-badge yg-badge-skip">SKIP</span>');
+    this.badgeAuto = badges.querySelector('.yg-badge-auto')!;
+    this.badgeSkip = badges.querySelector('.yg-badge-skip')!;
 
     this.choicesEl = mk('yg-choices', '<div class="yg-choice-prompt"></div><div class="yg-choice-list"></div>');
     this.choicePromptEl = this.choicesEl.querySelector('.yg-choice-prompt')!;
@@ -359,6 +363,7 @@ export class GameUI {
     const s = this.settings;
     const pct = (v: number) => `${Math.round(v * 100)}%`;
     slider('文字速度', 0, 60, 1, () => s.textCps, (v) => (v === 0 ? '瞬间' : `${v} 字/秒`), (v) => (s.textCps = v));
+    slider('自动模式等待', 300, 3000, 50, () => s.autoBaseMs, (v) => `${(v / 1000).toFixed(1)}s`, (v) => (s.autoBaseMs = v));
     slider('BGM 音量', 0, 100, 1, () => s.vol.bgm * 100, (v) => `${v}`, (v) => (s.vol.bgm = v / 100));
     slider('语音音量', 0, 100, 1, () => s.vol.voice * 100, (v) => `${v}`, (v) => (s.vol.voice = v / 100));
     slider('音效音量', 0, 100, 1, () => s.vol.se * 100, (v) => `${v}`, (v) => (s.vol.se = v / 100));
@@ -450,6 +455,13 @@ export class GameUI {
     this.chapterEl.classList.remove('on');
     void this.chapterEl.offsetWidth; // 重触发动画
     this.chapterEl.classList.add('on');
+  }
+
+  /** 右上角状态徽标（AUTO / SKIP） */
+  setBadge(name: 'auto' | 'skip', on: boolean, text?: string): void {
+    const el = name === 'auto' ? this.badgeAuto : this.badgeSkip;
+    if (text !== undefined) el.textContent = text;
+    el.classList.toggle('on', on);
   }
 
   showError(message: string): void {

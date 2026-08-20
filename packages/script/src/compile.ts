@@ -368,7 +368,8 @@ export function compileStory(input: CompileInput): CompileResult {
       case 'weather': {
         const preset = needPos(0, '粒子预设（sakura/snow/rain/fireflies/dust/off）');
         if (preset === null) return;
-        args = { preset };
+        const density = named['density'] !== undefined ? num(named['density'], 'density（0–1）') : undefined;
+        if (density !== null) args = { preset, density: density ?? undefined };
         break;
       }
       case 'filter': {

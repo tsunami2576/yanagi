@@ -3,7 +3,7 @@
  * 声明式状态差分渲染：apply(下一状态) 只对变化部分做动画。
  */
 import type { StageState, TransitionHints, TransitionSpec } from '@yanagi/core';
-import { Application, Assets, Container, Sprite, type Texture } from 'pixi.js';
+import { Application, Assets, Container, Graphics, Sprite, type Texture } from 'pixi.js';
 
 export interface StageResolver {
   bgUrl(id: string): string | undefined;
@@ -18,8 +18,22 @@ const warned = new Set<string>();
 function warnOnce(key: string): void {
   if (!warned.has(key)) {
     warned.add(key);
-    console.info(`[yanagi-stage] "${key}" 演出将在 M1 落地（当前为 no-op）`);
+    console.info(`[yanagi-stage] "${key}" 演出暂未实现（后续迭代落地）`);
   }
+}
+
+interface Particle {
+  sprite: Sprite;
+  baseX: number;
+  y: number;
+  vy: number;
+  swayAmp: number;
+  swaySpeed: number;
+  phase: number;
+  rotSpeed: number;
+  glow: boolean;
+  baseAlpha: number;
+  vx: number;
 }
 
 export class Stage {
@@ -27,6 +41,7 @@ export class Stage {
   private root = new Container();
   private bgLayer = new Container();
   private spriteLayer = new Container();
+  private weatherLayer = new Container();
   private fxLayer = new Container();
   private bgSprite: Sprite | null = null;
   private spriteMap = new Map<string, { holder: Container; sprite: Sprite; texKey: string }>();
@@ -34,6 +49,9 @@ export class Stage {
   private baseX = 0;
   private baseY = 0;
   private shaking = false;
+  private particles: Particle[] = [];
+  private particleTex = new Map<string, Texture>();
+  private weatherClock = 0;
   readonly ready: Promise<void>;
 
   constructor(parent: HTMLElement) {
@@ -57,8 +75,9 @@ export class Stage {
     }
     parent.appendChild(this.app.canvas);
     this.app.stage.addChild(this.root);
-    this.root.addChild(this.bgLayer, this.spriteLayer, this.fxLayer);
+    this.root.addChild(this.bgLayer, this.spriteLayer, this.weatherLayer, this.fxLayer);
     this.app.renderer.on('resize', () => this.layout());
+    this.app.ticker.add((ticker) => this.tickWeather(ticker.deltaMS / 1000));
     this.layout();
   }
 
@@ -83,7 +102,9 @@ export class Stage {
       await this.swapBg(url ?? null, hints.bg ?? { type: 'cross', ms: restore ? 0 : 300 }, restore);
     }
     await this.syncSprites(next, resolver, restore);
-    if (next.weather) warnOnce(`weather:${next.weather}`);
+    if (prev?.weather !== next.weather) {
+      this.setWeather(next.weather, hints.weatherDensity ?? 0.5, restore);
+    }
     if (next.filter) warnOnce(`filter:${next.filter}`);
     if (next.fgs.length) warnOnce('fg');
     this.applied = { ...next, sprites: { ...next.sprites } };
@@ -299,6 +320,99 @@ export class Stage {
       return await new Promise<Blob | null>((res) => dst.toBlob((b) => res(b), 'image/jpeg', 0.7));
     } catch {
       return null;
+    }
+  }
+
+  // ---------- 天气粒子 ----------
+
+  private particleTexture(kind: 'dot' | 'petal' | 'streak', color: number): Texture {
+    const key = `${kind}:${color}`;
+    const hit = this.particleTex.get(key);
+    if (hit) return hit;
+    const g = new Graphics();
+    if (kind === 'dot') g.circle(0, 0, 6).fill({ color });
+    else if (kind === 'petal') g.ellipse(0, 0, 9, 5.5).fill({ color });
+    else g.roundRect(-1.5, -18, 3, 36, 1.5).fill({ color });
+    const tex = this.app.renderer.generateTexture(g);
+    g.destroy();
+    this.particleTex.set(key, tex);
+    return tex;
+  }
+
+  /** 设置天气粒子预设；null = 清空。 */
+  setWeather(preset: string | null, density = 0.5, restore = false): void {
+    for (const p of this.particles) p.sprite.destroy();
+    this.particles = [];
+    if (!preset) return;
+    const d = Math.min(1, Math.max(0.1, density));
+    interface Wx {
+      n: number;
+      kind: 'dot' | 'petal' | 'streak';
+      color: number;
+      alpha: number;
+      vy: [number, number];
+      sway: number;
+      swaySpeed: [number, number];
+      scale: [number, number];
+      rot?: boolean;
+      glow?: boolean;
+      vx?: number;
+    }
+    const presets: Record<string, Wx> = {
+      sakura: { n: 26, kind: 'petal', color: 0xf5b8c8, alpha: 0.9, vy: [42, 86], sway: 46, swaySpeed: [0.6, 1.4], scale: [0.7, 1.3], rot: true },
+      snow: { n: 46, kind: 'dot', color: 0xffffff, alpha: 0.85, vy: [34, 68], sway: 22, swaySpeed: [0.3, 0.9], scale: [0.35, 0.8] },
+      rain: { n: 70, kind: 'streak', color: 0xbdd4ee, alpha: 0.35, vy: [640, 860], sway: 0, swaySpeed: [0, 0], scale: [0.7, 1.2], vx: -110 },
+      fireflies: { n: 16, kind: 'dot', color: 0xd8f0a0, alpha: 0.9, vy: [-10, 10], sway: 60, swaySpeed: [0.15, 0.45], scale: [0.4, 0.7], glow: true },
+      dust: { n: 24, kind: 'dot', color: 0xffffff, alpha: 0.22, vy: [6, 16], sway: 30, swaySpeed: [0.1, 0.3], scale: [0.25, 0.5] },
+    };
+    const wx = presets[preset];
+    if (!wx) {
+      warnOnce(`weather:${preset}`);
+      return;
+    }
+    const count = Math.max(4, Math.round(wx.n * d));
+    for (let i = 0; i < count; i++) {
+      const sprite = new Sprite(this.particleTexture(wx.kind, wx.color));
+      const scale = lerpTo(wx.scale[0], wx.scale[1], Math.random());
+      sprite.anchor.set(0.5);
+      sprite.scale.set(scale);
+      sprite.alpha = wx.alpha * (0.6 + Math.random() * 0.4);
+      this.weatherLayer.addChild(sprite);
+      this.particles.push({
+        sprite,
+        baseX: Math.random() * DESIGN_W,
+        y: -DESIGN_H + Math.random() * DESIGN_H * 2,
+        vy: lerpTo(wx.vy[0], wx.vy[1], Math.random()),
+        swayAmp: wx.sway * (0.5 + Math.random() * 0.5),
+        swaySpeed: lerpTo(wx.swaySpeed[0], wx.swaySpeed[1], Math.random()),
+        phase: Math.random() * Math.PI * 2,
+        rotSpeed: wx.rot ? (Math.random() * 2 - 1) * 2.2 : 0,
+        glow: !!wx.glow,
+        baseAlpha: sprite.alpha,
+        vx: wx.vx ?? 0,
+      });
+    }
+    if (restore) this.tickWeather(0);
+  }
+
+  private tickWeather(dt: number): void {
+    if (!this.particles.length) return;
+    this.weatherClock += dt;
+    const t = this.weatherClock;
+    for (const p of this.particles) {
+      p.y += p.vy * dt;
+      p.baseX += p.vx * dt;
+      const x = p.baseX + Math.sin(t * p.swaySpeed + p.phase) * p.swayAmp;
+      p.sprite.x = ((x % DESIGN_W) + DESIGN_W) % DESIGN_W;
+      p.sprite.y = p.y;
+      if (p.rotSpeed) p.sprite.rotation += p.rotSpeed * dt;
+      if (p.glow) p.sprite.alpha = p.baseAlpha * (0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 1.8 + p.phase * 3)));
+      if (p.y > DESIGN_H + 40) {
+        p.y = -40 - Math.random() * 80;
+        p.baseX = Math.random() * DESIGN_W;
+      } else if (p.y < -DESIGN_H - 80) {
+        p.y = DESIGN_H + 20;
+      }
     }
   }
 
