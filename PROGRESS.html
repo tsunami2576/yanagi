@@ -161,7 +161,7 @@ footer{
 </header>
 
 <section class="stat-cards" aria-label="项目统计">
-  <div class="stat-card"><div class="stat-value">39/39</div><div class="stat-label">测试通过（单元 34 + E2E 5）</div></div>
+  <div class="stat-card"><div class="stat-value">42/42</div><div class="stat-label">测试通过（单元 34 + E2E 6 + 金像 2）</div></div>
   <div class="stat-card"><div class="stat-value">1.7MB</div><div class="stat-label">demo 构建产物（预算 3MB）</div></div>
   <div class="stat-card"><div class="stat-value">6+1</div><div class="stat-label">workspace 包 + canary 游戏</div></div>
   <div class="stat-card"><div class="stat-value">9</div><div class="stat-label">决策日志条目（ADR）</div></div>
@@ -176,8 +176,8 @@ footer{
   </div>
   <div class="ms">
     <div class="ms-name">M1 玩家体验基线</div>
-    <div class="ms-bar"><div class="ms-fill is-doing" style="width:80%"></div></div>
-    <div class="ms-pct">80%</div>
+    <div class="ms-bar"><div class="ms-fill" style="width:100%"></div></div>
+    <div class="ms-pct">100%</div>
   </div>
   <div class="ms">
     <div class="ms-name">M2 商业作品功能面</div>
@@ -206,6 +206,11 @@ footer{
 <section id="timeline">
   <h2>时间线 <span style="font-size:12.5px;color:var(--muted);font-weight:400">（最近 15 次会话，新的在前）</span></h2>
   <div class="timeline">
+    <div class="tl-item">
+      <div class="tl-dot done"></div>
+      <div class="tl-head"><time>2026-08-20</time><span class="tl-tag">迭代4 · 交互重定义+M1完成</span></div>
+      <p>滚轮下=前进/上=记录；回溯收编进记录（⏪）；选择入列；失焦静音；预算CI+金像。E2E 6/6+金像 2/2</p>
+    </div>
     <div class="tl-item">
       <div class="tl-dot done"></div>
       <div class="tl-head"><time>2026-08-20</time><span class="tl-tag">迭代3 · 双bug+M1后半</span></div>
@@ -281,8 +286,11 @@ footer{
     <li class="done">M1-3a Backlog 语音重播 + 已读浅色标注（迭代3）</li>
     <li class="done">M1-4b 转场全家（cross/fade/slide/blinds/circle/feather）+ 立绘呼吸（迭代3）</li>
     <li class="done">M1-5a 存档导出导入（JSON、缩略图内嵌、进度并集合并）（迭代3）</li>
-    <li>M1-6 会话内回溯（rollback 环缓冲）+ 失焦静音设置项</li>
-    <li>M1-7 性能预算 CI（首包 ≤3MB/TTI ≤3s）+ 金像截图测试框架</li>
+    <li class="done">M1-6 会话内回溯（记录界面 ⏪ 按条跳转）+ 失焦静音 + 滚轮交互重定义（迭代4）</li>
+    <li class="done">M1-7a 性能预算 CI（首包 174KB/3MB）+ 金像测试框架（迭代4）</li>
+    <li>M2-1 CG 画廊 / 音乐鉴赏 / 场景回想（临时状态重放）</li>
+    <li>M2-2 Staff Roll；主题系统（藍/和 + 游戏级覆盖）；标题画面正式化</li>
+    <li>M2-3 i18n 基础（strings 提取→JSON→运行时切换）；30 分钟模拟作品走查</li>
   </ol>
 </section>
 
@@ -319,6 +327,6 @@ footer{
   本文件由 progress-tracker v2 维护 · 打开即读，无需联网
 </footer>
 
-<!-- AUDIT: 2026-08-20 | timeline 5/15 | decisions 9/20 | size ~15KB/80KB -->
+<!-- AUDIT: 2026-08-20 | timeline 6/15 | decisions 9/20 | size ~15KB/80KB -->
 </body>
 </html>

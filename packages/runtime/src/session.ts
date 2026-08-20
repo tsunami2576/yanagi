@@ -3,7 +3,9 @@ import { AudioMixer } from '@yanagi/audio-web';
 import {
   type BacklogEntry,
   type Block,
+  cloneState,
   type GameDef,
+  type GameState,
   type StageState,
   type TransitionHints,
   initialState,
@@ -61,6 +63,8 @@ export class GameSession {
   /** 本局开始时的已读快照（回想中"以前读过"变色判定） */
   private readBaseline = new Set<string>();
   private lastSaveMenu: { mode: 'save' | 'load'; origin: 'title' | 'pause' } | null = null;
+  /** 会话内回溯环缓冲（安全点快照，上限 20，跨会话不保留） */
+  private rollbackRing: { uid: string; state: GameState }[] = [];
   private readDirty = 0;
   private thumbUrls = new Map<Blob, string>();
   private destroyed = false;
@@ -115,6 +119,7 @@ export class GameSession {
         this.applySettings(s);
       },
       replayVoice: (voice: string) => void this.playVoice(voice, false),
+      rollback: (uid: string) => void this.rollbackTo(uid),
       exportSaves: () => void this.exportSaves(),
       importFile: (file: File) => void this.importFile(file),
       panelClosed: () => {
@@ -150,7 +155,7 @@ export class GameSession {
         this.onAdvance();
       } else if (e.key === 'l' || e.key === 'L') {
         e.preventDefault();
-        if (!this.ui.titleOpen && !this.ui.overlayOpen) this.ui.toggleBacklog(this.history());
+        if (!this.ui.titleOpen && !this.ui.overlayOpen) this.ui.toggleBacklog(this.backlogEntries());
       } else if (e.key === 'a' || e.key === 'A') {
         if (!this.ui.titleOpen && !this.ui.overlayOpen && this.vm) {
           e.preventDefault();
@@ -188,8 +193,33 @@ export class GameSession {
     };
     window.addEventListener('pagehide', pagehide);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') pagehide();
+      if (document.visibilityState === 'hidden') {
+        pagehide();
+        if (this.settings.muteOnBlur) void this.mixer.suspend();
+      } else if (this.settings.muteOnBlur) {
+        void this.mixer.resumeCtx();
+      }
     });
+
+    // 滚轮：向下 = 前进（同单击），向上 = 呼出对话记录（回溯在记录界面内按条触发）
+    let wheelGate = 0;
+    this.opts.root.addEventListener(
+      'wheel',
+      (e) => {
+        const t = e.target as Element;
+        if (t.closest('.yg-backlog, .yg-panel, .yg-title')) return; // 面板内滚动放行
+        const now = performance.now();
+        if (now - wheelGate < 140) return;
+        if (this.ui.overlayOpen || this.ui.titleOpen) return;
+        wheelGate = now;
+        if (e.deltaY < 0) {
+          if (!this.ui.backlogOpen && this.vm) this.ui.openBacklog(this.backlogEntries());
+        } else if (e.deltaY > 0) {
+          if (!this.ui.backlogOpen) this.onAdvance();
+        }
+      },
+      { passive: true },
+    );
   }
 
   private onAdvance(): void {
@@ -261,6 +291,7 @@ export class GameSession {
     if (this.vm) await this.saveGame('quick');
     if (this.waitTimer) clearTimeout(this.waitTimer);
     this.resetModes();
+    this.rollbackRing = [];
     this.block = null;
     this.vm = null;
     this.busy = false;
@@ -308,6 +339,7 @@ export class GameSession {
           case 'dialogue': {
             // wasRead 须在 handleEvents（标记已读）之前取
             const wasRead = this.readSet.has(block.uid);
+            this.pushRollback(block.uid);
             if (this.skipActive && this.skipMode === 'read' && !wasRead && !this.skipHeld) {
               this.setSkip('off'); // 仅已读模式遇到未读行：停止跳过，正常显示
             }
@@ -333,6 +365,7 @@ export class GameSession {
           }
           case 'menu': {
             if (this.skipMode !== 'off') this.setSkip('off'); // 选择肢前停止跳过（Auto 暂停等待选择）
+            this.pushRollback(block.uid);
             this.ui.hideText();
             this.ui.showChoices(block.prompt ?? null, block.options, (i) => {
               this.pick(i);
@@ -648,9 +681,35 @@ export class GameSession {
     this.ui.closeSaveMenu();
     this.resetModes();
     this.readBaseline = new Set(this.readSet);
+    this.rollbackRing = [];
     this.vm = new ScriptVM(this.def.bundle, state);
     await this.applyFullState(state);
     this.continueLoop();
+  }
+
+  /** 会话内回溯：跳转到回想中对应句/选择的安全点。 */
+  private async rollbackTo(uid: string): Promise<void> {
+    if (!this.vm) return;
+    const idx = this.rollbackRing.map((e) => e.uid).lastIndexOf(uid);
+    const hit = idx >= 0 ? this.rollbackRing[idx] : null;
+    if (!hit) return;
+    this.rollbackRing = this.rollbackRing.slice(0, idx + 1);
+    if (this.waitTimer) {
+      clearTimeout(this.waitTimer);
+      this.waitTimer = null;
+    }
+    this.resetModes();
+    this.mixer.stopVoice();
+    const state = cloneState(hit.state);
+    this.vm = new ScriptVM(this.def.bundle, state);
+    await this.applyFullState(state);
+    this.continueLoop();
+  }
+
+  private pushRollback(uid: string): void {
+    if (!this.vm) return;
+    this.rollbackRing.push({ uid, state: this.vm.snapshot() });
+    if (this.rollbackRing.length > 20) this.rollbackRing.shift();
   }
 
   private async doSave(slot: string): Promise<void> {
@@ -747,11 +806,14 @@ export class GameSession {
     this.ui.applySettings(s);
   }
 
-  private history(): (import('@yanagi/core').BacklogEntry & { read?: boolean })[] {
+  /** 想起数据：正序（最旧在上），标注"以前读过"与会话内可回溯。 */
+  private backlogEntries(): (BacklogEntry & { read?: boolean; canRollback?: boolean })[] {
     if (!this.vm) return [];
-    return this.vm.state.history
-      .map((e) => ({ ...e, read: this.readBaseline.has(e.uid) }))
-      .reverse();
+    return this.vm.state.history.map((e) => ({
+      ...e,
+      read: this.readBaseline.has(e.uid),
+      canRollback: this.rollbackRing.some((r) => r.uid === e.uid),
+    }));
   }
 
   // ---------- 存档导出 / 导入 ----------

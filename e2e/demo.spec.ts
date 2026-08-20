@@ -132,9 +132,44 @@ test('Skip：已读模式遇未读停止；全部模式跳到选择肢并停止'
   await expect(page.locator('.yg-badge-skip.on')).toHaveCount(0);
 });
 
+test('滚轮与回溯：滚轮上开记录（含选择文本、正序最新在下），⏪ 回溯跳转', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /开\s*始/ }).click();
+  await expect(page.locator('.yg-textwin.on')).toBeVisible({ timeout: 15_000 });
+
+  const choices = page.locator('.yg-choices.on');
+  await advanceUntil(page, async () => (await choices.count()) > 0);
+  await choices.getByText('留下来陪你').click();
+  await expect(page.locator('.yg-text')).toContainText('只有稍微');
+  await page.keyboard.press('Space'); // 补全当前行
+  await page.waitForTimeout(300);
+
+  // 滚轮上 → 呼出对话记录
+  await page.mouse.wheel(0, -240);
+  await expect(page.locator('.yg-backlog.on')).toBeVisible();
+  const list = page.locator('.yg-backlog-list');
+  await expect(list).toContainText('留下来陪你'); // 选择条目文本
+  await expect(list).toContainText('只有稍微'); // 对话条目
+  // 正序：最新条目应位于列表底部（最后一个是"只有稍微"）
+  const items = list.locator('.yg-backlog-item');
+  await expect(items.last()).toContainText('只有稍微');
+
+  // 回溯到最新一条（⏪）→ 回到该句
+  await list.locator('.yg-rollback-btn').last().click();
+  await expect(page.locator('.yg-backlog.on')).toHaveCount(0);
+  await expect(page.locator('.yg-textwin.on')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('.yg-text')).toContainText('只有稍微');
+
+  // 滚轮下 = 前进到下一句
+  await page.mouse.wheel(0, 240);
+  await advanceUntil(page, async () =>
+    (await page.locator('.yg-text').textContent())?.includes('还没走呢') ?? false,
+  );
+});
+
 test('设置面板可打开并调节音量', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /设\s*置/ }).click();
   await expect(page.locator('.yg-overlay.on')).toBeVisible();
-  await expect(page.locator('.yg-set-row')).toHaveCount(7);
+  await expect(page.locator('.yg-set-row')).toHaveCount(8);
 });

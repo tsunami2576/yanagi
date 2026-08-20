@@ -20,3 +20,4 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm -C games/demo exec vite build
+      - run: node scripts/check-budget.mjs games/demo/dist

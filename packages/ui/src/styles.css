@@ -392,10 +392,37 @@
   padding: 16px 20px;
 }
 .yg-backlog-item {
-  padding: 10px 0;
+  position: relative;
+  padding: 10px 0 10px 30px;
   border-bottom: 1px dashed var(--yg-line);
   font-size: 14.5px;
   line-height: 1.8;
+}
+.yg-backlog-item.choice {
+  color: var(--yg-aoi);
+}
+.yg-backlog-item.choice .yg-backlog-name {
+  color: var(--yg-text-dim);
+}
+.yg-rollback-btn {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 6px;
+  border: 1px solid var(--yg-line);
+  background: transparent;
+  color: var(--yg-aoi);
+  cursor: pointer;
+  opacity: 0.55;
+}
+.yg-rollback-btn:hover {
+  opacity: 1;
+  border-color: var(--yg-aoi);
 }
 .yg-backlog-name {
   color: var(--yg-sakura);

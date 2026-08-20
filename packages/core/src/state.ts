@@ -5,6 +5,8 @@ import type { AudioState, StageState, Val } from './types';
 export const SAVE_SCHEMA = 1;
 
 export interface BacklogEntry {
+  /** 'say' = 对话/旁白（缺省），'choice' = 玩家选择 */
+  kind?: 'say' | 'choice';
   uid: string;
   speaker: string | null;
   name: string | null;

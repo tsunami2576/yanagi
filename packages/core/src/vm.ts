@@ -174,6 +174,14 @@ export class ScriptVM {
       picked: opt.text,
       all: this.lastMenu.filter((o) => !o.disabled).map((o) => o.text),
     });
+    this.state.history.push({
+      kind: 'choice',
+      uid,
+      speaker: null,
+      name: null,
+      text: opt.text,
+    });
+    if (this.state.history.length > HISTORY_MAX) this.state.history.shift();
     this.lastMenu = null;
     this.jump(opt.target);
     this.state.updatedAt = Date.now();

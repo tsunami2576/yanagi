@@ -10,6 +10,8 @@ export interface Settings {
   vol: { bgm: number; se: number; voice: number; ambient: number };
   /** 文本窗不透明度 0.5–1 */
   windowOpacity: number;
+  /** 失焦时静音 */
+  muteOnBlur: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -18,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoPerCharMs: 18,
   vol: { bgm: 0.8, se: 0.8, voice: 0.9, ambient: 0.7 },
   windowOpacity: 1,
+  muteOnBlur: true,
 };
 
 export interface UIHooks {
@@ -35,6 +38,7 @@ export interface UIHooks {
   loadSlot(slot: string): void;
   settingsChange(s: Settings): void;
   replayVoice(voice: string): void;
+  rollback(uid: string): void;
   exportSaves(): void;
   importFile(file: File): void;
   /** 面板被用户关闭（用于判断是否回到标题等上下文） */
@@ -376,6 +380,7 @@ export class GameUI {
     slider('音效音量', 0, 100, 1, () => s.vol.se * 100, (v) => `${v}`, (v) => (s.vol.se = v / 100));
     slider('环境音量', 0, 100, 1, () => s.vol.ambient * 100, (v) => `${v}`, (v) => (s.vol.ambient = v / 100));
     slider('文本窗不透明度', 50, 100, 1, () => s.windowOpacity * 100, (v) => `${v}`, (v) => (s.windowOpacity = v / 100));
+    slider('失焦时静音', 0, 1, 1, () => (s.muteOnBlur ? 1 : 0), (v) => (v ? '开' : '关'), (v) => (s.muteOnBlur = v === 1));
   }
 
   // ---------- 存档 ----------
@@ -419,16 +424,30 @@ export class GameUI {
 
   // ---------- 想起 ----------
 
-  openBacklog(entries: (BacklogEntry & { read?: boolean })[]): void {
+  openBacklog(entries: (BacklogEntry & { read?: boolean; canRollback?: boolean })[]): void {
     this.backlogList.replaceChildren();
     const frag = document.createDocumentFragment();
     for (const e of entries) {
       const item = document.createElement('div');
       item.className =
-        'yg-backlog-item' + (e.speaker ? '' : ' narration') + (e.read ? ' read' : '');
+        'yg-backlog-item' +
+        (e.kind === 'choice' ? ' choice' : e.speaker ? '' : ' narration') +
+        (e.read ? ' read' : '');
+      if (e.canRollback) {
+        const back = document.createElement('button');
+        back.className = 'yg-rollback-btn';
+        back.title = '回溯到此句';
+        back.textContent = '⏪';
+        back.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          this.closeBacklog();
+          this.hooks.rollback(e.uid);
+        });
+        item.appendChild(back);
+      }
       const name = document.createElement('span');
       name.className = 'yg-backlog-name';
-      name.textContent = e.name ?? '';
+      name.textContent = e.kind === 'choice' ? '❖ 选择' : (e.name ?? '');
       const text = document.createElement('span');
       text.textContent = e.text;
       item.append(name, text);
@@ -445,6 +464,7 @@ export class GameUI {
       frag.appendChild(item);
     }
     this.backlogList.appendChild(frag);
+    // 正序展示：最旧在上、最新在下，并滚到最新处
     this.backlogList.scrollTop = this.backlogList.scrollHeight;
     this.backlogEl.classList.add('on');
   }
@@ -453,7 +473,7 @@ export class GameUI {
     this.backlogEl.classList.remove('on');
   }
 
-  toggleBacklog(entries: (BacklogEntry & { read?: boolean })[]): void {
+  toggleBacklog(entries: (BacklogEntry & { read?: boolean; canRollback?: boolean })[]): void {
     if (this.backlogOpen) this.closeBacklog();
     else this.openBacklog(entries);
   }
