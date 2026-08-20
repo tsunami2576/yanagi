@@ -504,3 +504,530 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* ================= 系统界面（柚子社式） ================= */
+.yg-sys {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 12, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 60;
+}
+.yg-sys.on {
+  display: flex;
+}
+.yg-sys-panel {
+  display: grid;
+  grid-template-columns: 168px 1fr 148px;
+  grid-template-rows: 1fr auto;
+  grid-template-areas: 'tabs body body' 'foot foot foot';
+  width: min(1060px, 94vw);
+  height: min(660px, 86vh);
+  border-radius: 18px;
+  background: var(--yg-panel);
+  border: 1px solid var(--yg-line);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: yg-sys-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes yg-sys-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.yg-sys-tabs {
+  grid-area: tabs;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 12px;
+  border-right: 1px solid var(--yg-line);
+  background: rgba(255, 255, 255, 0.025);
+}
+.yg-sys-tab {
+  padding: 13px 16px;
+  font-size: 15px;
+  font-family: var(--yg-font);
+  letter-spacing: 0.28em;
+  color: var(--yg-text-dim);
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0 10px 10px 0;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.yg-sys-tab:hover {
+  color: var(--yg-text);
+  background: rgba(122, 162, 196, 0.08);
+}
+.yg-sys-tab.on {
+  color: var(--yg-text);
+  background: rgba(122, 162, 196, 0.14);
+  border-left-color: var(--yg-aoi);
+}
+.yg-sys-body {
+  grid-area: body;
+  overflow-y: auto;
+  padding: 22px 30px;
+}
+.yg-sys-foot {
+  grid-area: foot;
+  display: flex;
+  gap: 10px;
+  padding: 14px 30px;
+  border-top: 1px solid var(--yg-line);
+}
+.yg-sys-foot .yg-btn {
+  margin: 0;
+  width: auto;
+  padding: 10px 34px;
+}
+.yg-sys-page h3 {
+  margin: 4px 0 16px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  color: var(--yg-aoi);
+}
+.yg-sys-page h3.yg-keymap-h {
+  margin-top: 22px;
+}
+.yg-keymap {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.yg-keymap td {
+  padding: 8px 12px;
+  border-bottom: 1px dashed var(--yg-line);
+  color: var(--yg-text-dim);
+}
+.yg-keymap td:first-child {
+  color: var(--yg-text);
+  width: 160px;
+}
+.yg-opt-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+}
+.yg-opt-row label {
+  color: var(--yg-text-dim);
+  letter-spacing: 0.08em;
+  font-size: 14px;
+}
+.yg-opt-btns {
+  display: flex;
+  gap: 8px;
+}
+.yg-opt-btns .yg-btn {
+  width: auto;
+  margin: 0;
+  padding: 8px 18px;
+}
+.yg-opt-btns .yg-btn.on {
+  border-color: var(--yg-aoi);
+  background: rgba(122, 162, 196, 0.16);
+}
+.yg-grid-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.yg-grid-head h3 {
+  margin: 0;
+}
+.yg-grid-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--yg-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.yg-grid-nav button {
+  padding: 5px 14px;
+  font-size: 13px;
+  font-family: var(--yg-font);
+  color: var(--yg-text);
+  background: var(--yg-panel-light);
+  border: 1px solid var(--yg-line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.yg-grid-nav button:hover {
+  border-color: var(--yg-aoi);
+}
+
+/* ================= 对话框控制条 ================= */
+.yg-dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 7px;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  pointer-events: auto;
+  opacity: 0.72;
+  transition: opacity 0.18s ease;
+}
+.yg-textwin:hover .yg-dock {
+  opacity: 1;
+}
+.yg-dock-btn {
+  min-width: 30px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-family: var(--yg-font);
+  letter-spacing: 0.05em;
+  color: var(--yg-text-dim);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease, transform 0.14s ease, background 0.14s ease;
+}
+.yg-dock-btn:hover {
+  color: var(--yg-text);
+  border-color: var(--yg-line);
+  transform: translateY(-1px);
+}
+.yg-dock-btn.on {
+  color: var(--yg-sakura);
+  border-color: var(--yg-sakura);
+  background: rgba(229, 139, 156, 0.12);
+}
+
+/* ================= 隐藏 UI 态 ================= */
+.yg-root.yg-ui-hidden .yg-textwin,
+.yg-root.yg-ui-hidden .yg-badges {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ================= 对话记录（居中宽面板） ================= */
+.yg-log {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 12, 0.55);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 55;
+}
+.yg-log.on {
+  display: flex;
+}
+.yg-log-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(920px, 92vw);
+  height: min(640px, 84vh);
+  border-radius: 18px;
+  background: var(--yg-panel);
+  border: 1px solid var(--yg-line);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: yg-sys-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.yg-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px 10px;
+}
+.yg-log-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  color: var(--yg-aoi);
+}
+.yg-log-close {
+  width: auto;
+  margin: 0;
+  padding: 7px 18px;
+  font-size: 13px;
+}
+.yg-log-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 24px 18px;
+}
+.yg-log-item {
+  display: grid;
+  grid-template-columns: 28px 56px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 4px;
+  border-bottom: 1px dashed var(--yg-line);
+  position: relative;
+}
+.yg-log-item.narration .yg-log-text {
+  color: var(--yg-text-dim);
+}
+.yg-log-item.choice .yg-log-text {
+  color: var(--yg-aoi);
+}
+.yg-log-item.read {
+  opacity: 0.55;
+}
+.yg-rollback-btn {
+  position: static;
+  width: 26px;
+  height: 26px;
+  margin-top: 8px;
+  padding: 0;
+  font-size: 11px;
+  border-radius: 7px;
+  border: 1px solid var(--yg-line);
+  background: transparent;
+  color: var(--yg-aoi);
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.14s ease, border-color 0.14s ease;
+}
+.yg-rollback-btn:hover {
+  opacity: 1;
+  border-color: var(--yg-aoi);
+}
+.yg-log-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--yg-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.yg-log-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 8%;
+  transform: scale(1.15);
+}
+.yg-log-avatar.choice {
+  color: var(--yg-aoi);
+  font-size: 20px;
+}
+.yg-log-name {
+  font-size: 12.5px;
+  color: var(--yg-sakura);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  margin-bottom: 3px;
+}
+.yg-log-item.narration .yg-log-name,
+.yg-log-item.choice .yg-log-name {
+  color: var(--yg-text-dim);
+}
+.yg-log-text {
+  font-size: 15px;
+  line-height: 1.75;
+  word-break: break-word;
+}
+.yg-log-item .yg-voice-btn {
+  margin-top: 10px;
+}
+.yg-log-foot {
+  padding: 8px 24px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--yg-text-dim);
+  letter-spacing: 0.1em;
+}
+
+/* ================= 右缘快速存档栏 ================= */
+.yg-qbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  display: none;
+  z-index: 40;
+}
+.yg-qbar.in-game {
+  display: block;
+}
+.yg-qbar-hotzone {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+}
+.yg-qbar-panel {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translate(calc(100% + 4px), -50%);
+  display: flex;
+  flex-direction: column;
+  width: 208px;
+  max-height: 82vh;
+  padding: 12px;
+  border-radius: 16px 0 0 16px;
+  background: var(--yg-panel);
+  border: 1px solid var(--yg-line);
+  border-right: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.45);
+  transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.yg-qbar:hover .yg-qbar-panel,
+.yg-qbar-panel:hover {
+  transform: translate(0, -50%);
+}
+.yg-qbar-mode {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.yg-qbar-mode button {
+  flex: 1;
+  padding: 7px 0;
+  font-size: 13px;
+  font-family: var(--yg-font);
+  letter-spacing: 0.2em;
+  color: var(--yg-text-dim);
+  background: var(--yg-panel-light);
+  border: 1px solid var(--yg-line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.yg-qbar-mode button.on {
+  color: var(--yg-text);
+  border-color: var(--yg-aoi);
+  background: rgba(122, 162, 196, 0.16);
+}
+.yg-qbar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+.yg-qbar-slot {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 8px;
+  padding: 0;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid var(--yg-line);
+  background: var(--yg-panel-light);
+  color: var(--yg-text);
+  font-family: var(--yg-font);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.14s ease;
+}
+.yg-qbar-slot:hover:not(:disabled) {
+  border-color: var(--yg-aoi);
+}
+.yg-qbar-slot:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.yg-qbar-slot img,
+.yg-qbar-thumb-empty {
+  width: 84px;
+  height: 48px;
+  object-fit: cover;
+  display: block;
+  background: rgba(255, 255, 255, 0.04);
+}
+.yg-qbar-meta {
+  padding: 6px 8px 6px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--yg-text-dim);
+  overflow: hidden;
+}
+.yg-qbar-meta b {
+  display: block;
+  color: var(--yg-text);
+  font-size: 12px;
+}
+.yg-qbar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding-top: 10px;
+  font-size: 12px;
+  color: var(--yg-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.yg-qbar-nav button {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--yg-text);
+  background: var(--yg-panel-light);
+  border: 1px solid var(--yg-line);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+/* ================= 确认弹窗 ================= */
+.yg-confirm {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 10, 0.5);
+  z-index: 70;
+}
+.yg-confirm.on {
+  display: flex;
+}
+.yg-confirm-panel {
+  width: min(420px, 88vw);
+  padding: 26px 30px 22px;
+  border-radius: 16px;
+  background: var(--yg-panel);
+  border: 1px solid var(--yg-line);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+  animation: yg-confirm-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes yg-confirm-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+.yg-confirm-msg {
+  font-size: 15px;
+  line-height: 1.8;
+  letter-spacing: 0.03em;
+  margin-bottom: 20px;
+  white-space: pre-line;
+}
+.yg-confirm-btns {
+  display: flex;
+  gap: 12px;
+}
+.yg-confirm-btns .yg-btn {
+  margin: 0;
+}
+.yg-confirm-yes:focus {
+  border-color: var(--yg-sakura);
+}
+

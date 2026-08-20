@@ -24,6 +24,7 @@ export class AudioMixer {
   private master: GainNode | null = null;
   private buses: Record<Bus, GainNode> | null = null;
   private vols: Record<Bus, number> = { bgm: 0.8, se: 0.8, voice: 0.9, ambient: 0.7 };
+  private masterVol = 1;
   private cache = new Map<string, AudioBuffer>();
   private cacheOrder: string[] = [];
   private decoding = new Map<string, Promise<AudioBuffer>>();
@@ -79,6 +80,11 @@ export class AudioMixer {
     src.buffer = buf;
     src.connect(ctx.destination);
     src.start(0);
+  }
+
+  setMasterVolume(vol: number): void {
+    this.masterVol = Math.min(1, Math.max(0, vol));
+    if (this.master) this.master.gain.value = this.masterVol;
   }
 
   setVolume(bus: Bus, vol: number): void {

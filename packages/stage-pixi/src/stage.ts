@@ -54,6 +54,8 @@ export class Stage {
   private weatherClock = 0;
   private idlePhase = new Map<string, number>();
   private idleClock = 0;
+  private densityScale = 1;
+  private currentWeather: { preset: string; density: number } | null = null;
   readonly ready: Promise<void>;
 
   constructor(parent: HTMLElement) {
@@ -401,12 +403,21 @@ export class Stage {
     return tex;
   }
 
+  /** 设置天气粒子总密度（0.2–1，设置页实时调节）；立即以当前预设重建。 */
+  setParticleDensity(scale: number): void {
+    this.densityScale = Math.min(1, Math.max(0.2, scale));
+    if (this.currentWeather) {
+      this.setWeather(this.currentWeather.preset, this.currentWeather.density);
+    }
+  }
+
   /** 设置天气粒子预设；null = 清空。 */
   setWeather(preset: string | null, density = 0.5, restore = false): void {
     for (const p of this.particles) p.sprite.destroy();
     this.particles = [];
+    this.currentWeather = preset ? { preset, density } : null;
     if (!preset) return;
-    const d = Math.min(1, Math.max(0.1, density));
+    const d = Math.min(1, Math.max(0.1, density)) * this.densityScale;
     interface Wx {
       n: number;
       kind: 'dot' | 'petal' | 'streak';

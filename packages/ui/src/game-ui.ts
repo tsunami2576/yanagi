@@ -1,5 +1,10 @@
-/** GameUI：所有 DOM UI 的总装。session 通过它驱动一切界面。 */
-import type { BacklogEntry, TextNode } from '@yanagi/core';
+/** GameUI：DOM UI 总装。session 通过它驱动一切界面。 */
+import type { BacklogEntry } from '@yanagi/core';
+import { BacklogPanel, type BacklogViewEntry } from './backlog-panel';
+import { ConfirmBox } from './confirm';
+import { DockBar, type DockAction } from './dock';
+import { QuickBar } from './quick-bar';
+import { SystemMenu, type SysTab } from './system-menu';
 import { TextWindow, type TextLineView } from './text-window';
 
 export interface Settings {
@@ -7,20 +12,32 @@ export interface Settings {
   textCps: number;
   autoBaseMs: number;
   autoPerCharMs: number;
-  vol: { bgm: number; se: number; voice: number; ambient: number };
+  vol: { master: number; bgm: number; se: number; voice: number; ambient: number };
   /** 文本窗不透明度 0.5–1 */
   windowOpacity: number;
   /** 失焦时静音 */
   muteOnBlur: boolean;
+  /** 天气粒子总密度 0.2–1 */
+  particleDensity: number;
+  /** 想起中"以前读过"浅色标注 */
+  backlogReadDim: boolean;
+  /** 空格键功能（默认隐藏对话框，可在设置改为下一句） */
+  spaceAction: 'hideWindow' | 'advance';
+  /** 右键功能（默认打开菜单） */
+  rightAction: 'menu' | 'hideWindow';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   textCps: 30,
   autoBaseMs: 1100,
   autoPerCharMs: 18,
-  vol: { bgm: 0.8, se: 0.8, voice: 0.9, ambient: 0.7 },
+  vol: { master: 1, bgm: 0.8, se: 0.8, voice: 0.9, ambient: 0.7 },
   windowOpacity: 1,
   muteOnBlur: true,
+  particleDensity: 1,
+  backlogReadDim: true,
+  spaceAction: 'hideWindow',
+  rightAction: 'menu',
 };
 
 export interface UIHooks {
@@ -29,11 +46,9 @@ export interface UIHooks {
   titleContinue(): void;
   titleLoad(): void;
   titleSettings(): void;
-  pauseResume(): void;
-  pauseSave(): void;
-  pauseLoad(): void;
-  pauseSettings(): void;
-  pauseTitle(): void;
+  dock(id: DockAction): void;
+  quickBar(slot: string, mode: 'save' | 'load'): void;
+  systemAction(id: 'resume' | 'toTitle' | 'exit'): void;
   saveSlot(slot: string): void;
   loadSlot(slot: string): void;
   settingsChange(s: Settings): void;
@@ -41,8 +56,6 @@ export interface UIHooks {
   rollback(uid: string): void;
   exportSaves(): void;
   importFile(file: File): void;
-  /** 面板被用户关闭（用于判断是否回到标题等上下文） */
-  panelClosed(): void;
 }
 
 export interface SaveSlotView {
@@ -55,7 +68,7 @@ export interface SaveSlotView {
   empty: boolean;
 }
 
-interface ChoiceButton {
+export interface ChoiceButton {
   index: number;
   text: string;
   disabled: boolean;
@@ -67,13 +80,6 @@ export class GameUI {
   private readonly titleEl: HTMLElement;
   private readonly titleMain: HTMLElement;
   private readonly titleContBtn: HTMLButtonElement;
-  private readonly pauseEl: HTMLElement;
-  private readonly settingsEl: HTMLElement;
-  private readonly saveEl: HTMLElement;
-  private readonly saveTitle: HTMLElement;
-  private readonly saveGrid: HTMLElement;
-  private readonly backlogEl: HTMLElement;
-  private readonly backlogList: HTMLElement;
   private readonly choicesEl: HTMLElement;
   private readonly choicePromptEl: HTMLElement;
   private readonly choiceListEl: HTMLElement;
@@ -82,14 +88,16 @@ export class GameUI {
   private readonly errorTextEl: HTMLElement;
   private readonly badgeAuto: HTMLElement;
   private readonly badgeSkip: HTMLElement;
+  private readonly dock: DockBar;
+  readonly quickBar: QuickBar;
+  readonly systemMenu: SystemMenu;
+  readonly backlog: BacklogPanel;
+  readonly confirmBox: ConfirmBox;
 
   private choiceButtons: HTMLButtonElement[] = [];
   private choiceSel = 0;
   private choicePick: ((i: number) => void) | null = null;
-  private saveMode: 'save' | 'load' = 'save';
-  private saveOrigin: 'title' | 'pause' = 'title';
-  private settingsOrigin: 'title' | 'pause' = 'title';
-  private settings: Settings = { ...DEFAULT_SETTINGS };
+  private settings: Settings = { ...DEFAULT_SETTINGS, vol: { ...DEFAULT_SETTINGS.vol } };
 
   constructor(
     private readonly root: HTMLElement,
@@ -108,6 +116,7 @@ export class GameUI {
 
     this.stageMount = mk('yg-stage');
     this.textWindow = new TextWindow(root);
+    this.dock = new DockBar(this.textWindow.el, (id) => this.hooks.dock(id));
     this.chapterEl = mk('yg-chapter', '<span></span>');
     const badges = mk('yg-badges', '<span class="yg-badge yg-badge-auto">AUTO</span><span class="yg-badge yg-badge-skip">SKIP</span>');
     this.badgeAuto = badges.querySelector('.yg-badge-auto')!;
@@ -132,53 +141,6 @@ export class GameUI {
     this.titleMain = this.titleEl.querySelector('.yg-title-main')!;
     this.titleContBtn = this.titleEl.querySelector('[data-act="continue"]')!;
 
-    this.pauseEl = mk(
-      'yg-overlay',
-      `<div class="yg-panel">
-         <h2>菜 单</h2>
-         <button class="yg-btn" data-act="resume">回到游戏</button>
-         <button class="yg-btn" data-act="save">保存进度</button>
-         <button class="yg-btn" data-act="load">读取进度</button>
-         <button class="yg-btn" data-act="settings">设置</button>
-         <button class="yg-btn" data-act="title">回到标题</button>
-       </div>`,
-    );
-
-    this.settingsEl = mk(
-      'yg-overlay',
-      `<div class="yg-panel">
-         <h2>设 置</h2>
-         <div class="yg-set-rows"></div>
-         <button class="yg-btn yg-close">关 闭</button>
-       </div>`,
-    );
-
-    this.saveEl = mk(
-      'yg-overlay',
-      `<div class="yg-panel" style="width:min(680px,94vw)">
-         <h2 class="yg-save-title"></h2>
-         <div class="yg-save-grid"></div>
-         <div class="yg-save-tools">
-           <button class="yg-btn yg-export">导出存档</button>
-           <button class="yg-btn yg-import">导入存档</button>
-           <button class="yg-btn yg-close" style="flex:1">关 闭</button>
-         </div>
-         <input type="file" accept="application/json,.json" style="display:none">
-       </div>`,
-    );
-    this.saveTitle = this.saveEl.querySelector('.yg-save-title')!;
-    this.saveGrid = this.saveEl.querySelector('.yg-save-grid')!;
-
-    this.backlogEl = mk(
-      'yg-backlog',
-      `<div class="yg-panel" style="box-shadow:none;background:transparent;border:none;padding:18px 20px 8px;display:flex;align-items:center">
-         <h2 style="margin:0;flex:1">想 起</h2>
-         <button class="yg-btn yg-close" style="width:auto;margin:0;padding:6px 18px">关闭 (L)</button>
-       </div>
-       <div class="yg-backlog-list"></div>`,
-    );
-    this.backlogList = this.backlogEl.querySelector('.yg-backlog-list')!;
-
     this.errorEl = mk(
       'yg-overlay',
       `<div class="yg-panel">
@@ -189,9 +151,36 @@ export class GameUI {
     );
     this.errorTextEl = this.errorEl.querySelector('.yg-error-text')!;
 
+    this.backlog = new BacklogPanel(
+      root,
+      {
+        onRollback: (uid) => this.hooks.rollback(uid),
+        onReplayVoice: (v) => this.hooks.replayVoice(v),
+        onClose: () => this.closeBacklog(),
+      },
+      (charId) => this.avatarFor?.(charId),
+    );
+    this.systemMenu = new SystemMenu(
+      root,
+      {
+        settingsChange: (s) => this.hooks.settingsChange(s),
+        saveSlot: (slot) => this.hooks.saveSlot(slot),
+        loadSlot: (slot) => this.hooks.loadSlot(slot),
+        exportSaves: () => this.hooks.exportSaves(),
+        importFile: (f) => this.hooks.importFile(f),
+        systemAction: (id) => this.hooks.systemAction(id),
+      },
+      () => this.settings,
+    );
+    this.confirmBox = new ConfirmBox(root);
+    this.quickBar = new QuickBar(root, (slot, mode) => this.hooks.quickBar(slot, mode));
+
     this.bindCommon();
     this.bindChoicesKeys();
   }
+
+  /** 想起头像解析（session 注入） */
+  avatarFor: ((charId: string | null) => string | undefined) | null = null;
 
   // ---------- 状态查询 ----------
 
@@ -199,13 +188,17 @@ export class GameUI {
     return this.textWindow.isPlaying;
   }
 
+  private get uiHidden(): boolean {
+    return this.root.classList.contains('yg-ui-hidden');
+  }
+
   /** 任何遮住舞台、需要屏蔽"前进"输入的面板 */
   get overlayOpen(): boolean {
     return (
       this.titleEl.classList.contains('on') ||
-      this.pauseEl.classList.contains('on') ||
-      this.settingsEl.classList.contains('on') ||
-      this.saveEl.classList.contains('on') ||
+      this.systemMenu.open ||
+      this.backlog.open ||
+      this.confirmBox.open ||
       this.choicesEl.classList.contains('on')
     );
   }
@@ -215,10 +208,14 @@ export class GameUI {
   }
 
   get backlogOpen(): boolean {
-    return this.backlogEl.classList.contains('on');
+    return this.backlog.open;
   }
 
-  // ---------- 文本窗 ----------
+  get confirmOpen(): boolean {
+    return this.confirmBox.open;
+  }
+
+  // ---------- 文本窗 / 控制条 ----------
 
   showDialogue(line: TextLineView, opts: { cps: number; instant: boolean }): void {
     this.textWindow.setOpacity(this.settings.windowOpacity);
@@ -231,6 +228,25 @@ export class GameUI {
 
   hideText(): void {
     this.textWindow.hide();
+  }
+
+  /** 隐藏全部游戏 UI（对话框/控制条/徽标），任意输入恢复 */
+  setUIHidden(hidden: boolean): void {
+    this.root.classList.toggle('yg-ui-hidden', hidden);
+  }
+
+  get isUIHidden(): boolean {
+    return this.uiHidden;
+  }
+
+  setDockActive(id: 'auto' | 'skip', on: boolean): void {
+    this.dock.setActive(id, on);
+  }
+
+  // ---------- 确认弹窗 ----------
+
+  confirm(message: string): Promise<boolean> {
+    return this.confirmBox.ask(message);
   }
 
   // ---------- 选择肢 ----------
@@ -269,7 +285,6 @@ export class GameUI {
   private bindChoicesKeys(): void {
     document.addEventListener('keydown', (e) => {
       if (!this.choicesEl.classList.contains('on')) return;
-      const enabled = this.choiceButtons.filter((b) => !b.disabled);
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
         const dir = e.key === 'ArrowUp' ? -1 : 1;
@@ -283,7 +298,6 @@ export class GameUI {
         const btn = this.choiceButtons[this.choiceSel];
         if (btn && !btn.disabled) this.pickChoice(this.choiceSel);
       }
-      void enabled;
     });
   }
 
@@ -297,7 +311,7 @@ export class GameUI {
   showTitle(title: string, canContinue: boolean, footNote = ''): void {
     this.titleMain.textContent = title;
     this.titleContBtn.disabled = !canContinue;
-    this.titleEl.querySelector('.yg-panel-foot')!.textContent = footNote || 'Yanagi Engine 0.1 · M0';
+    this.titleEl.querySelector('.yg-panel-foot')!.textContent = footNote || 'Yanagi Engine 0.1 · M1';
     this.titleEl.classList.add('on');
     this.hideText();
   }
@@ -306,179 +320,45 @@ export class GameUI {
     this.titleEl.classList.remove('on');
   }
 
-  // ---------- 暂停菜单 ----------
+  // ---------- 系统界面 ----------
 
-  get pauseOpen(): boolean {
-    return this.pauseEl.classList.contains('on');
+  openSystem(tab: SysTab, slots: SaveSlotView[]): void {
+    this.systemMenu.openAt(tab, slots);
   }
 
-  openPause(): void {
-    this.pauseEl.classList.add('on');
+  closeSystem(): void {
+    this.systemMenu.close();
   }
 
-  closePause(): void {
-    this.pauseEl.classList.remove('on');
+  get systemOpen(): boolean {
+    return this.systemMenu.open;
   }
 
-  // ---------- 设置 ----------
-
-  openSettings(origin: 'title' | 'pause'): void {
-    this.settingsOrigin = origin;
-    this.buildSettingsRows();
-    this.settingsEl.classList.add('on');
+  get systemTab(): SysTab {
+    return this.systemMenu.currentTab;
   }
 
-  closeSettings(): void {
-    this.settingsEl.classList.remove('on');
+  setSystemSlots(slots: SaveSlotView[]): void {
+    this.systemMenu.setSlots(slots);
+    this.quickBar.setSlots(slots);
   }
 
-  get settingsOpen(): boolean {
-    return this.settingsEl.classList.contains('on');
-  }
-
-  applySettings(s: Settings): void {
-    this.settings = { ...s, vol: { ...s.vol } };
-    this.textWindow.setOpacity(s.windowOpacity);
-  }
-
-  private buildSettingsRows(): void {
-    const rows = this.settingsEl.querySelector('.yg-set-rows')!;
-    rows.replaceChildren();
-    const slider = (
-      label: string,
-      min: number,
-      max: number,
-      step: number,
-      get: () => number,
-      fmt: (v: number) => string,
-      set: (v: number) => void,
-    ): void => {
-      const row = document.createElement('div');
-      row.className = 'yg-set-row';
-      row.innerHTML = `<label>${label}</label><input type="range"><output></output>`;
-      const input = row.querySelector('input')!;
-      input.min = String(min);
-      input.max = String(max);
-      input.step = String(step);
-      input.value = String(get());
-      const out = row.querySelector('output')!;
-      out.textContent = fmt(get());
-      input.addEventListener('input', () => {
-        const v = Number(input.value);
-        out.textContent = fmt(v);
-        set(v);
-        this.hooks.settingsChange({ ...this.settings, vol: { ...this.settings.vol } });
-      });
-      rows.appendChild(row);
-    };
-    const s = this.settings;
-    const pct = (v: number) => `${Math.round(v * 100)}%`;
-    slider('文字速度', 0, 60, 1, () => s.textCps, (v) => (v === 0 ? '瞬间' : `${v} 字/秒`), (v) => (s.textCps = v));
-    slider('自动模式等待', 300, 3000, 50, () => s.autoBaseMs, (v) => `${(v / 1000).toFixed(1)}s`, (v) => (s.autoBaseMs = v));
-    slider('BGM 音量', 0, 100, 1, () => s.vol.bgm * 100, (v) => `${v}`, (v) => (s.vol.bgm = v / 100));
-    slider('语音音量', 0, 100, 1, () => s.vol.voice * 100, (v) => `${v}`, (v) => (s.vol.voice = v / 100));
-    slider('音效音量', 0, 100, 1, () => s.vol.se * 100, (v) => `${v}`, (v) => (s.vol.se = v / 100));
-    slider('环境音量', 0, 100, 1, () => s.vol.ambient * 100, (v) => `${v}`, (v) => (s.vol.ambient = v / 100));
-    slider('文本窗不透明度', 50, 100, 1, () => s.windowOpacity * 100, (v) => `${v}`, (v) => (s.windowOpacity = v / 100));
-    slider('失焦时静音', 0, 1, 1, () => (s.muteOnBlur ? 1 : 0), (v) => (v ? '开' : '关'), (v) => (s.muteOnBlur = v === 1));
-  }
-
-  // ---------- 存档 ----------
-
-  openSaveMenu(mode: 'save' | 'load', origin: 'title' | 'pause', slots: SaveSlotView[]): void {
-    this.saveMode = mode;
-    this.saveOrigin = origin;
-    this.saveTitle.textContent = mode === 'save' ? '保存进度' : '读取进度';
-    this.saveGrid.replaceChildren();
-    for (const slot of slots) {
-      // 保存模式下，自动/快速槽由系统占用，不允许手动写入
-      const system = mode === 'save' && (slot.slot.startsWith('auto:') || slot.slot === 'quick');
-      const btn = document.createElement('button');
-      btn.className = 'yg-save-slot';
-      btn.disabled = system;
-      const time = slot.empty ? '' : new Date(slot.savedAt).toLocaleString('zh-CN', { hour12: false });
-      btn.innerHTML = slot.thumbUrl
-        ? `<img class="yg-save-thumb" src="${slot.thumbUrl}" alt="">`
-        : `<div class="yg-save-thumb"></div>`;
-      const meta = document.createElement('div');
-      meta.className = 'yg-save-meta';
-      meta.innerHTML = `<b>${slot.label}</b>${slot.empty ? (system ? '系统槽位' : '— 空 —') : `${escapeHtml(slot.chapterTitle || '序章')}<br>${escapeHtml(slot.lineSummary)}<br>${time}`}`;
-      btn.appendChild(meta);
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (this.saveMode === 'save') this.hooks.saveSlot(slot.slot);
-        else this.hooks.loadSlot(slot.slot);
-      });
-      this.saveGrid.appendChild(btn);
-    }
-    this.saveEl.classList.add('on');
-  }
-
-  closeSaveMenu(): void {
-    this.saveEl.classList.remove('on');
-  }
-
-  get saveOpen(): boolean {
-    return this.saveEl.classList.contains('on');
+  /** 游戏内才显示右缘快速栏 */
+  setQuickBarActive(inGame: boolean): void {
+    this.quickBar.el.classList.toggle('in-game', inGame);
   }
 
   // ---------- 想起 ----------
 
-  openBacklog(entries: (BacklogEntry & { read?: boolean; canRollback?: boolean })[]): void {
-    this.backlogList.replaceChildren();
-    const frag = document.createDocumentFragment();
-    for (const e of entries) {
-      const item = document.createElement('div');
-      item.className =
-        'yg-backlog-item' +
-        (e.kind === 'choice' ? ' choice' : e.speaker ? '' : ' narration') +
-        (e.read ? ' read' : '');
-      if (e.canRollback) {
-        const back = document.createElement('button');
-        back.className = 'yg-rollback-btn';
-        back.title = '回溯到此句';
-        back.textContent = '⏪';
-        back.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          this.closeBacklog();
-          this.hooks.rollback(e.uid);
-        });
-        item.appendChild(back);
-      }
-      const name = document.createElement('span');
-      name.className = 'yg-backlog-name';
-      name.textContent = e.kind === 'choice' ? '❖ 选择' : (e.name ?? '');
-      const text = document.createElement('span');
-      text.textContent = e.text;
-      item.append(name, text);
-      if (e.voice) {
-        const btn = document.createElement('button');
-        btn.className = 'yg-voice-btn';
-        btn.textContent = '▶ 语音';
-        btn.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          this.hooks.replayVoice(e.voice!);
-        });
-        item.appendChild(btn);
-      }
-      frag.appendChild(item);
-    }
-    this.backlogList.appendChild(frag);
-    // 正序展示：最旧在上、最新在下，并滚到最新处
-    this.backlogList.scrollTop = this.backlogList.scrollHeight;
-    this.backlogEl.classList.add('on');
+  openBacklog(entries: BacklogViewEntry[]): void {
+    this.backlog.show(entries);
   }
 
   closeBacklog(): void {
-    this.backlogEl.classList.remove('on');
+    this.backlog.hide();
   }
 
-  toggleBacklog(entries: (BacklogEntry & { read?: boolean; canRollback?: boolean })[]): void {
-    if (this.backlogOpen) this.closeBacklog();
-    else this.openBacklog(entries);
-  }
-
-  // ---------- 章节题字 / 错误 ----------
+  // ---------- 章节题字 / 徽标 / 错误 ----------
 
   chapterTitle(text: string): void {
     const span = this.chapterEl.querySelector('span')!;
@@ -488,7 +368,6 @@ export class GameUI {
     this.chapterEl.classList.add('on');
   }
 
-  /** 右上角状态徽标（AUTO / SKIP） */
   setBadge(name: 'auto' | 'skip', on: boolean, text?: string): void {
     const el = name === 'auto' ? this.badgeAuto : this.badgeSkip;
     if (text !== undefined) el.textContent = text;
@@ -500,12 +379,19 @@ export class GameUI {
     this.errorEl.classList.add('on');
   }
 
+  // ---------- 设置 ----------
+
+  applySettings(s: Settings): void {
+    this.settings = { ...s, vol: { ...s.vol } };
+    this.textWindow.setOpacity(s.windowOpacity);
+  }
+
   // ---------- 事件绑定 ----------
 
   private bindCommon(): void {
     this.root.addEventListener('pointerdown', (e) => {
       const t = e.target as Element;
-      if (t.closest('button, input, .yg-panel, .yg-backlog, .yg-title')) return;
+      if (t.closest('button, input, .yg-panel, .yg-log-panel, .yg-sys-panel, .yg-qbar, .yg-confirm-panel, .yg-title')) return;
       this.hooks.advance();
     });
 
@@ -519,42 +405,6 @@ export class GameUI {
       }
     });
 
-    this.pauseEl.addEventListener('click', (e) => {
-      const act = (e.target as Element).closest('[data-act]')?.getAttribute('data-act');
-      switch (act) {
-        case 'resume': this.hooks.pauseResume(); break;
-        case 'save': this.hooks.pauseSave(); break;
-        case 'load': this.hooks.pauseLoad(); break;
-        case 'settings': this.hooks.pauseSettings(); break;
-        case 'title': this.hooks.pauseTitle(); break;
-      }
-    });
-
-    for (const el of [this.settingsEl, this.saveEl]) {
-      el.querySelector('.yg-close')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        el.classList.remove('on');
-        this.hooks.panelClosed();
-      });
-    }
-    this.saveEl.querySelector('.yg-export')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.hooks.exportSaves();
-    });
-    const importInput = this.saveEl.querySelector<HTMLInputElement>('input[type="file"]');
-    this.saveEl.querySelector('.yg-import')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      importInput?.click();
-    });
-    importInput?.addEventListener('change', () => {
-      const file = importInput.files?.[0];
-      importInput.value = '';
-      if (file) this.hooks.importFile(file);
-    });
-    this.backlogEl.querySelector('.yg-close')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.closeBacklog();
-    });
     this.errorEl.querySelector('.yg-close')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.errorEl.classList.remove('on');
@@ -562,6 +412,5 @@ export class GameUI {
   }
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-}
+export type { BacklogViewEntry, SysTab, DockAction };
+export type { BacklogEntry } from '@yanagi/core';

@@ -18,7 +18,7 @@ export type Block =
   | { kind: 'end' }
   | { kind: 'ended' };
 
-const HISTORY_MAX = 200;
+const HISTORY_MAX = 400;
 
 export class ScriptVM {
   private readonly events: EngineEvent[] = [];
@@ -190,6 +190,42 @@ export class ScriptVM {
   /** 状态快照（存档）。 */
   snapshot(): GameState {
     return cloneState(this.state);
+  }
+
+  /**
+   * 确定性重放到目标指令（回溯用）：从锚点快照快速推进到 targetPc，
+   * 不触发任何表现（事件留在队列由调用方丢弃）；menu 依据 choiceLog 模拟当时的选择。
+   * 返回实际是否到达目标（选择日志缺失时停在最近的 menu 处）。
+   */
+  replayTo(targetPc: number, choiceLog: readonly import('./state').ChoiceRecord[]): boolean {
+    let guard = 100000;
+    this.events.length = 0;
+    while (guard-- > 0) {
+      if (this.state.pc === targetPc) return true;
+      const block = this.run(true);
+      if (this.state.pc === targetPc) return true;
+      switch (block.kind) {
+        case 'dialogue':
+          this.finishDialogue();
+          break;
+        case 'wait':
+          this.finishWait();
+          break;
+        case 'menu': {
+          const rec = choiceLog.find((c) => c.at === block.uid);
+          const idx = rec
+            ? block.options.findIndex((o) => !o.disabled && o.text === rec.picked)
+            : -1;
+          if (idx < 0) return false; // 选择日志缺失：停在 menu（重放中断）
+          this.chooseOption(idx);
+          break;
+        }
+        case 'end':
+        case 'ended':
+          return false;
+      }
+    }
+    return false;
   }
 
   private jump(label: string): void {

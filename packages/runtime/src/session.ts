@@ -1,4 +1,4 @@
-/** GameSession：会话编排 —— 输入、事件分发、存读档、音频/舞台驱动、自动存档。 */
+/** GameSession：会话编排 —— 输入、事件分发、存读档、音频/舞台驱动、自动存档、回溯。 */
 import { AudioMixer } from '@yanagi/audio-web';
 import {
   type BacklogEntry,
@@ -6,8 +6,6 @@ import {
   cloneState,
   type GameDef,
   type GameState,
-  type StageState,
-  type TransitionHints,
   initialState,
   migrateSave,
   type SaveData,
@@ -15,19 +13,35 @@ import {
   validateResume,
 } from '@yanagi/core';
 import { Stage } from '@yanagi/stage-pixi';
-import { DEFAULT_SETTINGS, GameUI, type Settings, type SaveSlotView } from '@yanagi/ui';
+import {
+  DEFAULT_SETTINGS,
+  type DockAction,
+  GameUI,
+  type Settings,
+  type SaveSlotView,
+  type SysTab,
+} from '@yanagi/ui';
 import { loadSettingsJson, requestPersistent, saveSettingsJson, type KVStorage } from './storage';
 
 export interface SessionOptions {
   root: HTMLElement;
   storage: KVStorage;
-  /** 试运行口令门（可选）：提供则在标题前要求输入 */
-  passcode?: string;
 }
 
 const AUTO_SLOTS = ['auto:0', 'auto:1', 'auto:2'];
-const MANUAL_SLOTS = ['quick', 'm0', 'm1', 'm2', 'm3', 'm4', 'm5'];
+const MANUAL_SLOTS = ['quick', ...Array.from({ length: 24 }, (_, i) => `m${i}`)];
 const ALL_SLOTS = [...AUTO_SLOTS, ...MANUAL_SLOTS];
+
+/** 回溯：普通安全点只记 pc（数十字节），每 ANCHOR_STEP 点落一个完整锚点快照。 */
+const ANCHOR_STEP = 16;
+const ANCHOR_MAX = 12;
+const SAFE_POINTS_MAX = 320;
+
+interface SafePoint {
+  uid: string;
+  kind: 'dialogue' | 'menu';
+  pc: number;
+}
 
 function blobToDataURL(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -62,12 +76,17 @@ export class GameSession {
   private unlocked = new Set<string>();
   /** 本局开始时的已读快照（回想中"以前读过"变色判定） */
   private readBaseline = new Set<string>();
-  private lastSaveMenu: { mode: 'save' | 'load'; origin: 'title' | 'pause' } | null = null;
-  /** 会话内回溯环缓冲（安全点快照，上限 20，跨会话不保留） */
-  private rollbackRing: { uid: string; state: GameState }[] = [];
   private readDirty = 0;
   private thumbUrls = new Map<Blob, string>();
   private destroyed = false;
+
+  // 回溯数据（会话内）
+  private safePoints: SafePoint[] = [];
+  private anchors: { pc: number; state: GameState }[] = [];
+  private spSinceAnchor = 0;
+
+  // 系统界面页签记忆
+  private lastSysTab: SysTab = 'visual';
 
   constructor(
     private readonly def: GameDef,
@@ -77,6 +96,7 @@ export class GameSession {
     this.settings.vol = { ...DEFAULT_SETTINGS.vol, ...this.settings.vol };
     this.ui = new GameUI(opts.root, this.hooks());
     this.stage = new Stage(this.ui.stageMount);
+    this.ui.avatarFor = (charId) => (charId ? def.manifest.sprites[charId]?.normal : undefined);
   }
 
   async start(): Promise<void> {
@@ -84,9 +104,12 @@ export class GameSession {
     await this.loadGlobals();
     this.applySettings(this.settings);
     this.bindInput();
-
     const hasSave = await this.anySave();
-    this.ui.showTitle(this.def.title, hasSave, this.opts.storage.degraded ? '存储不可用（私密模式？）· 进度将不保留' : 'Yanagi Engine 0.1 · M0');
+    this.ui.showTitle(
+      this.def.title,
+      hasSave,
+      this.opts.storage.degraded ? '存储不可用（私密模式？）· 进度将不保留' : 'Yanagi Engine 0.1 · M1',
+    );
     requestPersistent();
   }
 
@@ -104,13 +127,12 @@ export class GameSession {
       advance: () => this.onAdvance(),
       titleStart: () => void this.beginNewGame(),
       titleContinue: () => void this.continueLatest(),
-      titleLoad: () => this.openLoadFrom('title'),
-      titleSettings: () => this.ui.openSettings('title'),
-      pauseResume: () => this.ui.closePause(),
-      pauseSave: () => this.openSaveFrom('pause'),
-      pauseLoad: () => this.openLoadFrom('pause'),
-      pauseSettings: () => this.ui.openSettings('pause'),
-      pauseTitle: () => void this.backToTitle(),
+      titleLoad: () => void this.openSysPage('load'),
+      titleSettings: () => void this.openSysPage('visual'),
+      dock: (id: DockAction) => void this.dockAction(id),
+      quickBar: (slot: string, mode: 'save' | 'load') =>
+        mode === 'save' ? void this.doSave(slot, true) : void this.doLoad(slot, true),
+      systemAction: (id: 'resume' | 'toTitle' | 'exit') => void this.systemAction(id),
       saveSlot: (slot: string) => void this.doSave(slot),
       loadSlot: (slot: string) => void this.doLoad(slot),
       settingsChange: (s: Settings) => {
@@ -119,14 +141,9 @@ export class GameSession {
         this.applySettings(s);
       },
       replayVoice: (voice: string) => void this.playVoice(voice, false),
-      rollback: (uid: string) => void this.rollbackTo(uid),
+      rollback: (uid: string) => void this.rollbackTo(uid, true),
       exportSaves: () => void this.exportSaves(),
       importFile: (file: File) => void this.importFile(file),
-      panelClosed: () => {
-        if (this.ui.titleOpen) return;
-        // 从标题打开的读档/设置关闭后回到标题语境
-        if (!this.vm) this.ui.showTitle(this.def.title, true);
-      },
     };
   }
 
@@ -135,48 +152,89 @@ export class GameSession {
   private bindInput(): void {
     document.addEventListener('keydown', (e) => {
       if (this.destroyed) return;
+      // 确认弹窗自行处理 Enter/Esc
+      if (this.ui.confirmOpen) return;
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (this.ui.overlayOpen && !this.ui.titleOpen) {
-          if (this.ui.saveOpen) this.ui.closeSaveMenu();
-          else if (this.ui.settingsOpen) this.ui.closeSettings();
-          else if (this.ui.pauseOpen) this.ui.closePause();
-          return;
-        }
-        if (!this.ui.titleOpen && this.vm) {
-          if (this.ui.backlogOpen) this.ui.closeBacklog();
-          else this.ui.openPause();
-        }
+        this.onBackAction();
         return;
       }
-      if (this.ui.titleOpen || this.ui.overlayOpen || this.ui.backlogOpen) return;
-      if (e.key === ' ' || e.key === 'Enter') {
-        e.preventDefault();
-        this.onAdvance();
-      } else if (e.key === 'l' || e.key === 'L') {
-        e.preventDefault();
-        if (!this.ui.titleOpen && !this.ui.overlayOpen) this.ui.toggleBacklog(this.backlogEntries());
-      } else if (e.key === 'a' || e.key === 'A') {
-        if (!this.ui.titleOpen && !this.ui.overlayOpen && this.vm) {
+      if (this.ui.titleOpen || this.ui.overlayOpen || this.ui.backlogOpen) {
+        // 系统界面打开时允许 L 关闭记录等不适用；其余输入吞掉
+        if (this.ui.systemOpen && (e.key === ' ' || e.key === 'Enter')) e.preventDefault();
+        return;
+      }
+      switch (e.key) {
+        case 'Enter':
+          e.preventDefault();
+          this.onAdvance();
+          break;
+        case ' ':
+          e.preventDefault();
+          if (this.settings.spaceAction === 'advance') this.onAdvance();
+          else this.toggleHideUI();
+          break;
+        case 'h':
+        case 'H':
+          e.preventDefault();
+          this.toggleHideUI();
+          break;
+        case 'l':
+        case 'L':
+          e.preventDefault();
+          this.toggleBacklog();
+          break;
+        case 'a':
+        case 'A':
           e.preventDefault();
           this.setAuto(!this.autoMode);
-        }
-      } else if (e.key === 'Tab') {
-        if (!this.ui.titleOpen && !this.ui.overlayOpen && this.vm) {
+          break;
+        case 'Tab':
           e.preventDefault();
           this.cycleSkip();
-        }
-      } else if (e.key === 'Control' && !e.repeat) {
-        this.beginCtrlSkip();
-      } else if (e.key === 'f' || e.key === 'F') {
-        e.preventDefault();
-        if (document.fullscreenElement) void document.exitFullscreen();
-        else void document.documentElement.requestFullscreen().catch(() => undefined);
+          break;
+        case 'Control':
+          if (!e.repeat) this.beginCtrlSkip();
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          if (document.fullscreenElement) void document.exitFullscreen();
+          else void document.documentElement.requestFullscreen().catch(() => undefined);
+          break;
       }
     });
     document.addEventListener('keyup', (e) => {
       if (e.key === 'Control') this.endCtrlSkip();
     });
+
+    // 右键：返回上一级（同 Esc）；对话界面默认打开系统界面（可配置为隐藏对话框）
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (this.ui.confirmOpen) return;
+      if (this.ui.titleOpen) return;
+      this.onBackAction();
+    });
+
+    // 滚轮：向下 = 前进（同单击），向上 = 呼出对话记录（记录面板内自身处理滚动/到底关闭）
+    let wheelGate = 0;
+    this.opts.root.addEventListener(
+      'wheel',
+      (e) => {
+        const t = e.target as Element;
+        if (t.closest('.yg-log, .yg-sys-panel, .yg-qbar, .yg-title, .yg-confirm-panel')) return;
+        const now = performance.now();
+        if (now - wheelGate < 140) return;
+        if (this.ui.overlayOpen || this.ui.titleOpen) return;
+        wheelGate = now;
+        if (e.deltaY < 0) {
+          if (!this.ui.backlogOpen && this.vm) this.ui.openBacklog(this.backlogEntries());
+        } else if (e.deltaY > 0) {
+          if (!this.ui.backlogOpen) this.onAdvance();
+        }
+      },
+      { passive: true },
+    );
 
     // 音频解锁：任何首次手势
     const unlock = (): void => {
@@ -200,32 +258,48 @@ export class GameSession {
         void this.mixer.resumeCtx();
       }
     });
+  }
 
-    // 滚轮：向下 = 前进（同单击），向上 = 呼出对话记录（回溯在记录界面内按条触发）
-    let wheelGate = 0;
-    this.opts.root.addEventListener(
-      'wheel',
-      (e) => {
-        const t = e.target as Element;
-        if (t.closest('.yg-backlog, .yg-panel, .yg-title')) return; // 面板内滚动放行
-        const now = performance.now();
-        if (now - wheelGate < 140) return;
-        if (this.ui.overlayOpen || this.ui.titleOpen) return;
-        wheelGate = now;
-        if (e.deltaY < 0) {
-          if (!this.ui.backlogOpen && this.vm) this.ui.openBacklog(this.backlogEntries());
-        } else if (e.deltaY > 0) {
-          if (!this.ui.backlogOpen) this.onAdvance();
-        }
-      },
-      { passive: true },
-    );
+  /** Esc / 右键：返回上一级。 */
+  private onBackAction(): void {
+    if (this.ui.confirmOpen) return;
+    if (this.ui.backlogOpen) {
+      this.ui.closeBacklog();
+      return;
+    }
+    if (this.ui.systemOpen) {
+      this.closeSys();
+      return;
+    }
+    if (this.ui.titleOpen) return;
+    if (this.ui.isUIHidden) {
+      this.toggleHideUI();
+      return;
+    }
+    if (this.vm) {
+      if (this.settings.rightAction === 'menu') void this.openSysPage(this.lastSysTab);
+      else this.toggleHideUI();
+    }
+  }
+
+  private toggleBacklog(): void {
+    if (this.ui.backlogOpen) this.ui.closeBacklog();
+    else if (this.vm && !this.ui.systemOpen && !this.ui.titleOpen) this.ui.openBacklog(this.backlogEntries());
+  }
+
+  private toggleHideUI(): void {
+    if (!this.vm || this.ui.titleOpen) return;
+    this.ui.setUIHidden(!this.ui.isUIHidden);
   }
 
   private onAdvance(): void {
     if (this.ui.overlayOpen || this.ui.titleOpen) return;
     if (this.ui.backlogOpen) {
       this.ui.closeBacklog();
+      return;
+    }
+    if (this.ui.isUIHidden) {
+      this.ui.setUIHidden(false);
       return;
     }
     // loop 过渡期（block 已设但演出/资源尚未就绪）忽略输入：
@@ -258,6 +332,77 @@ export class GameSession {
     // menu：必须选择
   }
 
+  // ---------- 控制条 / 系统界面 ----------
+
+  private dockAction(id: DockAction): void {
+    switch (id) {
+      case 'hide':
+        this.toggleHideUI();
+        break;
+      case 'qsave':
+        void this.doSave('quick', true);
+        break;
+      case 'qload':
+        void this.doLoad('quick', true);
+        break;
+      case 'prevChoice':
+        void this.prevChoice();
+        break;
+      case 'log':
+        this.toggleBacklog();
+        break;
+      case 'auto':
+        this.setAuto(!this.autoMode);
+        break;
+      case 'skip':
+        this.setSkip(this.skipMode === 'off' ? 'all' : 'off');
+        break;
+      case 'nextChoice':
+        void this.skipToChoice();
+        break;
+      case 'settings':
+        void this.openSysPage(this.lastSysTab === 'save' || this.lastSysTab === 'load' ? 'visual' : this.lastSysTab);
+        break;
+      case 'save':
+        void this.openSysPage('save');
+        break;
+      case 'load':
+        void this.openSysPage('load');
+        break;
+    }
+  }
+
+  private async openSysPage(tab: SysTab): Promise<void> {
+    const slots = await this.collectSlots();
+    this.ui.openSystem(tab, slots);
+  }
+
+  private closeSys(): void {
+    this.lastSysTab = this.ui.systemTab;
+    this.ui.closeSystem();
+  }
+
+  private async systemAction(id: 'resume' | 'toTitle' | 'exit'): Promise<void> {
+    if (id === 'resume') {
+      this.closeSys();
+      return;
+    }
+    if (id === 'toTitle') {
+      if (!this.vm) {
+        this.closeSys();
+        return;
+      }
+      if (!(await this.ui.confirm('返回主菜单？\n当前进度将自动保存到「快速」槽。'))) return;
+      this.closeSys();
+      await this.backToTitle();
+      return;
+    }
+    // exit（桌面端）
+    if (await this.ui.confirm('退出游戏？')) {
+      window.close();
+    }
+  }
+
   // ---------- 游戏流程 ----------
 
   private async beginNewGame(): Promise<void> {
@@ -266,6 +411,8 @@ export class GameSession {
     this.readBaseline = new Set(this.readSet);
     const st = initialState(this.def.bundle);
     this.vm = new ScriptVM(this.def.bundle, st);
+    this.ui.setQuickBarActive(true);
+    this.ui.setSystemSlots(await this.collectSlots());
     await this.applyFullState(st);
     this.continueLoop();
   }
@@ -291,13 +438,17 @@ export class GameSession {
     if (this.vm) await this.saveGame('quick');
     if (this.waitTimer) clearTimeout(this.waitTimer);
     this.resetModes();
-    this.rollbackRing = [];
+    this.safePoints = [];
+    this.anchors = [];
+    this.spSinceAnchor = 0;
+    this.ui.setUIHidden(false);
+    this.ui.setQuickBarActive(false);
+    this.ui.closeBacklog();
     this.block = null;
     this.vm = null;
     this.busy = false;
     await this.mixer.stopBgm(800);
     await this.mixer.stopAmbient();
-    this.ui.closePause();
     this.ui.hideText();
     await this.stage.apply(
       { bg: null, sprites: {}, weather: null, filter: null, fgs: [], focus: null },
@@ -339,7 +490,7 @@ export class GameSession {
           case 'dialogue': {
             // wasRead 须在 handleEvents（标记已读）之前取
             const wasRead = this.readSet.has(block.uid);
-            this.pushRollback(block.uid);
+            this.pushSafePoint(block.uid, 'dialogue');
             if (this.skipActive && this.skipMode === 'read' && !wasRead && !this.skipHeld) {
               this.setSkip('off'); // 仅已读模式遇到未读行：停止跳过，正常显示
             }
@@ -365,7 +516,7 @@ export class GameSession {
           }
           case 'menu': {
             if (this.skipMode !== 'off') this.setSkip('off'); // 选择肢前停止跳过（Auto 暂停等待选择）
-            this.pushRollback(block.uid);
+            this.pushSafePoint(block.uid, 'menu');
             this.ui.hideText();
             this.ui.showChoices(block.prompt ?? null, block.options, (i) => {
               this.pick(i);
@@ -394,6 +545,14 @@ export class GameSession {
     }
   }
 
+  private pick(i: number): void {
+    if (!this.vm || this.block?.kind !== 'menu') return;
+    this.vm.chooseOption(i);
+    void this.handleEvents();
+    void this.autosave();
+    this.continueLoop();
+  }
+
   // ---------- Auto / Skip ----------
 
   private get skipActive(): boolean {
@@ -409,13 +568,10 @@ export class GameSession {
 
   private setAuto(on: boolean): void {
     this.autoMode = on;
-    if (on) {
-      this.setSkip('off');
-      this.clearPending();
-    } else {
-      this.clearPending();
-    }
+    if (on) this.setSkip('off');
+    this.clearPending();
     this.ui.setBadge('auto', on);
+    this.ui.setDockActive('auto', on);
     if (on && this.block?.kind === 'dialogue') this.scheduleAuto(this.currentLineChars());
   }
 
@@ -428,9 +584,12 @@ export class GameSession {
     if (mode !== 'off') {
       this.autoMode = false;
       this.ui.setBadge('auto', false);
+      this.ui.setDockActive('auto', false);
       this.clearPending();
       this.mixer.stopVoice();
-      this.ui.setBadge('skip', true, mode === 'read' ? 'SKIP·已读' : 'SKIP·全部');
+      const label = mode === 'read' ? 'SKIP·已读' : 'SKIP·全部';
+      this.ui.setBadge('skip', true, label);
+      this.ui.setDockActive('skip', true);
       if (this.block?.kind === 'dialogue') {
         this.ui.completeText();
         this.scheduleAdvance(45);
@@ -438,6 +597,7 @@ export class GameSession {
     } else {
       this.clearPending();
       this.ui.setBadge('skip', false, 'SKIP');
+      this.ui.setDockActive('skip', false);
     }
   }
 
@@ -446,6 +606,7 @@ export class GameSession {
     this.skipHeld = true;
     this.mixer.stopVoice();
     this.ui.setBadge('skip', true, 'SKIP▶');
+    this.ui.setDockActive('skip', true);
     if (this.block?.kind === 'dialogue') {
       this.ui.completeText();
       this.scheduleAdvance(60);
@@ -457,6 +618,7 @@ export class GameSession {
     if (this.skipMode === 'off') {
       this.clearPending();
       this.ui.setBadge('skip', false, 'SKIP');
+      this.ui.setDockActive('skip', false);
     }
   }
 
@@ -504,7 +666,9 @@ export class GameSession {
         this.pendingTimer = setTimeout(tick, 300);
         return;
       }
-      if (this.ui.textPlaying || this.mixer.voicePlaying) {
+      if (this.ui.isUIHidden) {
+        // UI 隐藏时 Auto 继续推进（无等待语音需求，尾延照常）
+      } else if (this.ui.textPlaying || this.mixer.voicePlaying) {
         this.pendingTimer = setTimeout(tick, 120);
         return;
       }
@@ -524,14 +688,78 @@ export class GameSession {
     this.clearPending();
     this.ui.setBadge('auto', false);
     this.ui.setBadge('skip', false, 'SKIP');
+    this.ui.setDockActive('auto', false);
+    this.ui.setDockActive('skip', false);
   }
 
-  private pick(i: number): void {
-    if (!this.vm || this.block?.kind !== 'menu') return;
-    this.vm.chooseOption(i);
-    void this.handleEvents();
-    void this.autosave();
+  // ---------- 回溯（锚点 + 确定性重放） ----------
+
+  private pushSafePoint(uid: string, kind: 'dialogue' | 'menu'): void {
+    if (!this.vm) return;
+    this.safePoints.push({ uid, kind, pc: this.vm.state.pc });
+    if (this.safePoints.length > SAFE_POINTS_MAX) this.safePoints.shift();
+    this.spSinceAnchor += 1;
+    if (this.spSinceAnchor >= ANCHOR_STEP) {
+      this.spSinceAnchor = 0;
+      this.anchors.push({ pc: this.vm.state.pc, state: this.vm.snapshot() });
+      if (this.anchors.length > ANCHOR_MAX) this.anchors.shift();
+    }
+  }
+
+  /** 想起数据：正序（最旧在上），标注"以前读过"与会话内可回溯。 */
+  private backlogEntries(): (BacklogEntry & { read?: boolean; canRollback?: boolean })[] {
+    if (!this.vm) return [];
+    return this.vm.state.history.map((e) => ({
+      ...e,
+      read: this.settings.backlogReadDim && this.readBaseline.has(e.uid),
+      canRollback: this.safePoints.some((sp) => sp.uid === e.uid),
+    }));
+  }
+
+  private async rollbackTo(uid: string, withConfirm: boolean): Promise<void> {
+    if (!this.vm) return;
+    const target = [...this.safePoints].reverse().find((sp) => sp.uid === uid);
+    if (!target) return;
+    if (withConfirm && !(await this.ui.confirm('回溯到此处？\n当前进度将被覆盖（文本可重新推进）。'))) return;
+    // 从最近的可重放锚点（pc ≤ 目标）克隆，重放到目标；无锚点则从剧本入口重放
+    const anchor = [...this.anchors].reverse().find((a) => a.pc <= target.pc);
+    const choiceLog = this.vm.state.choices.slice();
+    const state = anchor ? cloneState(anchor.state) : initialState(this.def.bundle);
+    const vm = new ScriptVM(this.def.bundle, state);
+    const reached = vm.replayTo(target.pc, choiceLog);
+    if (!reached && state.pc !== target.pc) {
+      console.warn('[yanagi] 回溯重放中断（选择日志缺失），停在最近可达点');
+    }
+    vm.drainEvents(); // 重放产生的事件全部丢弃（表现由全量恢复承担）
+    if (this.waitTimer) {
+      clearTimeout(this.waitTimer);
+      this.waitTimer = null;
+    }
+    this.resetModes();
+    this.mixer.stopVoice();
+    this.vm = vm;
+    await this.applyFullState(vm.state);
     this.continueLoop();
+  }
+
+  /** 返回上一个选择肢。 */
+  private async prevChoice(): Promise<void> {
+    if (!this.vm) return;
+    const curPc = this.vm.state.pc;
+    const target = [...this.safePoints].reverse().find((sp) => sp.kind === 'menu' && sp.pc !== curPc);
+    if (!target) {
+      this.ui.showError('本会话内没有更早的选择肢可返回。');
+      return;
+    }
+    await this.rollbackTo(target.uid, true);
+  }
+
+  /** 跳转到下一个选择肢（快进全部直到 menu）。 */
+  private async skipToChoice(): Promise<void> {
+    if (!this.vm) return;
+    if (this.block?.kind === 'menu') return;
+    if (!(await this.ui.confirm('跳转至下一个选择？\n沿途文本将被快进。'))) return;
+    this.setSkip('all');
   }
 
   // ---------- 事件分发 ----------
@@ -546,7 +774,9 @@ export class GameSession {
         case 'bgm': {
           const track = ev.id ? this.def.manifest.bgm[ev.id] : null;
           await this.mixer.playBgm(
-            track ? { url: new URL(track.url, location.href).href, loopStart: track.loopStart, loopEnd: track.loopEnd } : null,
+            track
+              ? { url: new URL(track.url, location.href).href, loopStart: track.loopStart, loopEnd: track.loopEnd }
+              : null,
             { fadeMs: ev.fadeMs, vol: ev.vol },
           );
           break;
@@ -603,12 +833,17 @@ export class GameSession {
     };
   }
 
-  /** 读档/新开局：完整重建舞台与音频（瞬时）。 */
-  private async applyFullState(state: { stage: StageState; audio: { bgm: string | null; ambient: string | null } }): Promise<void> {
+  /** 读档/新开局/回溯：完整重建舞台与音频（瞬时）。 */
+  private async applyFullState(state: GameState): Promise<void> {
     await this.stage.apply(state.stage, this.resolver(), {}, true);
     const bgm = state.audio.bgm ? this.def.manifest.bgm[state.audio.bgm] : null;
-    await this.mixer.playBgm(bgm ? { url: this.abs(bgm.url), loopStart: bgm.loopStart, loopEnd: bgm.loopEnd } : null, { fadeMs: 0 });
-    const amb = state.audio.ambient ? this.def.manifest.bgm[state.audio.ambient] ?? this.seAsTrack(state.audio.ambient) : null;
+    await this.mixer.playBgm(
+      bgm ? { url: this.abs(bgm.url), loopStart: bgm.loopStart, loopEnd: bgm.loopEnd } : null,
+      { fadeMs: 0 },
+    );
+    const amb = state.audio.ambient
+      ? this.def.manifest.bgm[state.audio.ambient] ?? this.seAsTrack(state.audio.ambient)
+      : null;
     await this.mixer.playAmbient(amb ? { url: this.abs(amb.url) } : null);
   }
 
@@ -646,6 +881,7 @@ export class GameSession {
         ...(thumbnail ? { thumbnail } : {}),
       };
       await this.opts.storage.set(`save:${slot}`, data);
+      this.ui.setSystemSlots(await this.collectSlots());
     } catch (e) {
       console.warn('[yanagi] 存档失败', e);
     }
@@ -678,71 +914,53 @@ export class GameSession {
     }
     await this.mixer.unlock();
     this.ui.hideTitle();
-    this.ui.closeSaveMenu();
+    this.closeSys();
     this.resetModes();
+    this.safePoints = [];
+    this.anchors = [];
+    this.spSinceAnchor = 0;
     this.readBaseline = new Set(this.readSet);
-    this.rollbackRing = [];
+    this.ui.setUIHidden(false);
+    this.ui.setQuickBarActive(true);
     this.vm = new ScriptVM(this.def.bundle, state);
+    this.ui.setSystemSlots(await this.collectSlots());
     await this.applyFullState(state);
     this.continueLoop();
   }
 
-  /** 会话内回溯：跳转到回想中对应句/选择的安全点。 */
-  private async rollbackTo(uid: string): Promise<void> {
+  private async doSave(slot: string, confirmFirst = false): Promise<void> {
     if (!this.vm) return;
-    const idx = this.rollbackRing.map((e) => e.uid).lastIndexOf(uid);
-    const hit = idx >= 0 ? this.rollbackRing[idx] : null;
-    if (!hit) return;
-    this.rollbackRing = this.rollbackRing.slice(0, idx + 1);
-    if (this.waitTimer) {
-      clearTimeout(this.waitTimer);
-      this.waitTimer = null;
+    const system = slot.startsWith('auto:') || slot === 'quick';
+    const existing = await this.readSave(slot);
+    // 风险确认：快速栏/控制条入口一律确认；系统界面中覆盖已有档确认（空槽直接保存）
+    if (confirmFirst || (!system && existing)) {
+      const msg = existing
+        ? `覆盖 "${slotLabel(slot)}"？\n${new Date(existing.savedAt).toLocaleString('zh-CN', { hour12: false })} 的进度将丢失。`
+        : `保存到「${slotLabel(slot)}」？`;
+      if (!(await this.ui.confirm(msg))) return;
     }
-    this.resetModes();
-    this.mixer.stopVoice();
-    const state = cloneState(hit.state);
-    this.vm = new ScriptVM(this.def.bundle, state);
-    await this.applyFullState(state);
-    this.continueLoop();
-  }
-
-  private pushRollback(uid: string): void {
-    if (!this.vm) return;
-    this.rollbackRing.push({ uid, state: this.vm.snapshot() });
-    if (this.rollbackRing.length > 20) this.rollbackRing.shift();
-  }
-
-  private async doSave(slot: string): Promise<void> {
     await this.saveGame(slot);
-    this.ui.closeSaveMenu();
-    this.ui.closePause();
   }
 
-  private async doLoad(slot: string): Promise<void> {
+  private async doLoad(slot: string, confirmFirst = false): Promise<void> {
     const data = await this.readSave(slot);
     if (!data) {
-      this.ui.showError(`存档 "${slotLabel(slot)}" 不存在或已损坏`);
+      if (!confirmFirst) this.ui.showError(`存档 "${slotLabel(slot)}" 不存在或已损坏`);
       return;
     }
+    if (this.vm && !(await this.ui.confirm(`读取 "${slotLabel(slot)}"？\n当前进度将自动保存到「快速」槽。`))) {
+      return;
+    }
+    if (this.vm) await this.saveGame('quick');
     await this.restore(slot, data);
   }
 
-  private async openSaveFrom(origin: 'title' | 'pause'): Promise<void> {
-    const slots = await this.collectSlots();
-    this.lastSaveMenu = { mode: 'save', origin };
-    this.ui.openSaveMenu('save', origin, slots);
-  }
-
-  private async openLoadFrom(origin: 'title' | 'pause'): Promise<void> {
-    const slots = await this.collectSlots();
-    this.lastSaveMenu = { mode: 'load', origin };
-    this.ui.openSaveMenu('load', origin, slots);
-  }
-
   private async collectSlots(): Promise<SaveSlotView[]> {
+    // 并行读取（28 槽串行事务在首次 IDB 初始化时可能逼近秒级）
+    const datas = await Promise.all(ALL_SLOTS.map((slot) => this.readSave(slot)));
     const out: SaveSlotView[] = [];
-    for (const slot of ALL_SLOTS) {
-      const data = await this.readSave(slot);
+    ALL_SLOTS.forEach((slot, i) => {
+      const data = datas[i];
       if (data) {
         let thumbUrl: string | null = null;
         if (data.thumbnail) {
@@ -769,51 +987,8 @@ export class GameSession {
           empty: true,
         });
       }
-    }
-    return out;
-  }
-
-  // ---------- 全局进度 / 设置 ----------
-
-  private async loadGlobals(): Promise<void> {
-    try {
-      const reads = await this.opts.storage.get<string[]>('global:read');
-      if (reads) this.readSet = new Set(reads);
-      const unlock = await this.opts.storage.get<string[]>('global:unlock');
-      if (unlock) this.unlocked = new Set(unlock);
-    } catch {
-      /* 降级存储 */
-    }
-  }
-
-  private async flushGlobals(): Promise<void> {
-    this.readDirty = 0;
-    try {
-      await this.opts.storage.set('global:read', [...this.readSet]);
-      await this.opts.storage.set('global:unlock', [...this.unlocked]);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  private applySettings(s: Settings): void {
-    this.mixer.setVolumes({
-      bgm: s.vol.bgm,
-      se: s.vol.se,
-      voice: s.vol.voice,
-      ambient: s.vol.ambient,
     });
-    this.ui.applySettings(s);
-  }
-
-  /** 想起数据：正序（最旧在上），标注"以前读过"与会话内可回溯。 */
-  private backlogEntries(): (BacklogEntry & { read?: boolean; canRollback?: boolean })[] {
-    if (!this.vm) return [];
-    return this.vm.state.history.map((e) => ({
-      ...e,
-      read: this.readBaseline.has(e.uid),
-      canRollback: this.rollbackRing.some((r) => r.uid === e.uid),
-    }));
+    return out;
   }
 
   // ---------- 存档导出 / 导入 ----------
@@ -876,7 +1051,6 @@ export class GameSession {
         delete entry['thumbnailData'];
         await this.opts.storage.set(`save:${slot}`, {
           ...entry,
-          state: entry['state'],
           version: 1,
           game: this.def.id,
           ...(thumbnail ? { thumbnail } : {}),
@@ -886,15 +1060,46 @@ export class GameSession {
       for (const uid of payload.read ?? []) this.readSet.add(uid);
       for (const u of payload.unlocked ?? []) this.unlocked.add(u);
       await this.flushGlobals();
-      if (this.lastSaveMenu) {
-        const { mode, origin } = this.lastSaveMenu;
-        if (mode === 'save') await this.openSaveFrom(origin);
-        else await this.openLoadFrom(origin);
-      }
+      this.ui.setSystemSlots(await this.collectSlots());
       console.info(`[yanagi] 导入完成：${imported} 个存档`);
     } catch (e) {
       console.error('[yanagi] 导入失败', e);
       this.ui.showError(`导入失败：${(e as Error).message}`);
     }
+  }
+
+  // ---------- 全局进度 / 设置 ----------
+
+  private async loadGlobals(): Promise<void> {
+    try {
+      const reads = await this.opts.storage.get<string[]>('global:read');
+      if (reads) this.readSet = new Set(reads);
+      const unlock = await this.opts.storage.get<string[]>('global:unlock');
+      if (unlock) this.unlocked = new Set(unlock);
+    } catch {
+      /* 降级存储 */
+    }
+  }
+
+  private async flushGlobals(): Promise<void> {
+    this.readDirty = 0;
+    try {
+      await this.opts.storage.set('global:read', [...this.readSet]);
+      await this.opts.storage.set('global:unlock', [...this.unlocked]);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private applySettings(s: Settings): void {
+    this.mixer.setMasterVolume(s.vol.master);
+    this.mixer.setVolumes({
+      bgm: s.vol.bgm,
+      se: s.vol.se,
+      voice: s.vol.voice,
+      ambient: s.vol.ambient,
+    });
+    this.stage.setParticleDensity(s.particleDensity);
+    this.ui.applySettings(s);
   }
 }
