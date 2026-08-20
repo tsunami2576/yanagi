@@ -485,7 +485,7 @@ export function compileStory(input: CompileInput): CompileResult {
   // ---- 警告：未赋值读取 / 未使用标签 ----
   for (const [name, loc] of readVars) {
     if (!assignedVars.has(name)) {
-      sink.warning(loc.file, loc.line, 1, `变量 "${name}" 被读取但从未赋值（@set/@rand），将始终视为未定义`);
+      sink.warning(loc.file, loc.line, 1, `变量 "${name}" 被读取但从未赋值（@set/@rand）；运行期按未定义处理（逻辑假/数值 0）`);
     }
   }
   // 这些指令之后控制流不会顺延到下一条 → 其后的标签若无人跳转则真不可达

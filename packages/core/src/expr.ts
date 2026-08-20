@@ -164,25 +164,35 @@ export interface EvalEnv {
   rand: (min: number, max: number) => number;
 }
 
-export function truthy(v: Val): boolean {
+/**
+ * 求值语义：未定义变量不抛错——按 undefined 参与运算（逻辑语境为假、数值语境为 0、
+ * 字符串语境为空）。跨分支读取未赋值变量是 VN 剧本的正常写法（编译期另有警告兜底）。
+ */
+export function truthy(v: Val | undefined): boolean {
   return Boolean(v);
 }
 
-function num(v: Val): number {
+function num(v: Val | undefined): number {
   if (typeof v === 'number') return v;
+  if (v === undefined) return 0;
   throw new ExprError(`期待数字，得到 ${typeof v === 'string' ? `"${v}"` : String(v)}`);
 }
 
-function str(v: Val): string {
+function str(v: Val | undefined): string {
+  if (v === undefined) return '';
   return typeof v === 'string' ? v : String(v);
 }
 
-function cmp(a: Val, b: Val): number {
+function cmp(a: Val | undefined, b: Val | undefined): number {
   if (typeof a === 'string' && typeof b === 'string') return a < b ? -1 : a > b ? 1 : 0;
+  if (typeof a === 'string' || typeof b === 'string') {
+    // 一侧字符串一侧未定义 → 按字符串比较（未定义为空串）
+    return str(a) < str(b) ? -1 : str(a) > str(b) ? 1 : 0;
+  }
   return num(a) - num(b);
 }
 
-export function evalExpr(e: Expr, env: EvalEnv): Val {
+export function evalExpr(e: Expr, env: EvalEnv): Val | undefined {
   switch (e.t) {
     case 'num':
       return e.v;
@@ -190,11 +200,8 @@ export function evalExpr(e: Expr, env: EvalEnv): Val {
       return e.v;
     case 'bool':
       return e.v;
-    case 'var': {
-      const v = env.vars[e.name];
-      if (v === undefined) throw new ExprError(`变量 "${e.name}" 未定义`);
-      return v;
-    }
+    case 'var':
+      return env.vars[e.name];
     case 'un':
       if (e.op === '!') return !truthy(evalExpr(e.a, env));
       return -num(evalExpr(e.a, env));

@@ -53,7 +53,7 @@ export class ScriptVM {
     return min + Math.floor(this.nextRand() * span);
   }
 
-  private eval(e: import('./types').Expr): Val {
+  private eval(e: import('./types').Expr): Val | undefined {
     return evalExpr(e, { vars: this.state.vars, rand: (a, b) => this.rand(a, b) });
   }
 
@@ -192,7 +192,9 @@ export class ScriptVM {
   }
 
   private applySet(cur: Extract<Instruction, { op: 'set' }>): void {
-    const v = this.eval(cur.value);
+    const raw = this.eval(cur.value);
+    // 未定义变量参与 @set 时落为 false（Val 不含 undefined，保证可序列化）
+    const v: Val = raw === undefined ? false : raw;
     const box = this.state.vars;
     switch (cur.kind) {
       case '=':

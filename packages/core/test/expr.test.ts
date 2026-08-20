@@ -31,9 +31,15 @@ describe('parseExpr + evalExpr', () => {
     expect(evalExpr(parseExpr('rand(1, 6)'), { vars, rand: (a, b) => a + b })).toBe(7);
   });
 
-  it('除零与未定义变量报错', () => {
+  it('除零报错；未定义变量按假值语义（不崩溃）', () => {
     expect(() => evalExpr(parseExpr('1 / 0'), { vars, rand: () => 0 })).toThrow();
-    expect(() => evalExpr(parseExpr('missing + 1'), { vars, rand: () => 0 })).toThrow(/未定义/);
+    // 跨分支读取未赋值变量是 VN 剧本正常写法：数值语境 0、逻辑语境假、字符串语境空
+    expect(evalExpr(parseExpr('missing + 1'), { vars, rand: () => 0 })).toBe(1);
+    expect(evalExpr(parseExpr('!missing'), { vars, rand: () => 0 })).toBe(true);
+    expect(evalExpr(parseExpr('missing >= 1'), { vars, rand: () => 0 })).toBe(false);
+    expect(evalExpr(parseExpr('missing && a'), { vars, rand: () => 0 })).toBe(false);
+    expect(evalExpr(parseExpr('"x" + missing'), { vars, rand: () => 0 })).toBe('x');
+    expect(evalExpr(parseExpr('missing == 0'), { vars, rand: () => 0 })).toBe(false);
   });
 
   it('语法错误', () => {
